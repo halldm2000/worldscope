@@ -2,9 +2,9 @@
  * ChatPanel: the AI interface overlay.
  *
  * Three states:
- *   minimized - just command bar at bottom edge
- *   peek - bottom panel, last few messages
- *   full - left sidebar with scrolling history
+ *   minimized - command bar at bottom-right corner
+ *   peek - right-side panel, last few messages
+ *   full - right sidebar with scrolling history
  */
 
 import { useRef, useEffect, useCallback } from 'react'
@@ -195,23 +195,23 @@ function containerStyle(state: PanelState): React.CSSProperties {
     return {
       ...base,
       bottom: 16,
-      left: '50%',
-      transform: 'translateX(-50%)',
-      width: 'min(600px, calc(100vw - 32px))',
+      right: 16,
+      width: 'min(400px, calc(100vw - 250px))',
     }
   }
 
   if (state === 'peek') {
     return {
       ...base,
-      bottom: 0,
-      left: 0,
-      right: 0,
-      height: '25vh',
-      minHeight: 180,
-      background: 'rgba(10, 12, 18, 0.85)',
+      bottom: 16,
+      right: 16,
+      width: 'min(420px, calc(100vw - 250px))',
+      maxHeight: '40vh',
+      background: 'rgba(10, 12, 18, 0.88)',
       backdropFilter: 'blur(20px)',
-      borderTop: '1px solid rgba(255,255,255,0.08)',
+      border: '1px solid rgba(255,255,255,0.08)',
+      borderRadius: 12,
+      justifyContent: 'flex-end',
     }
   }
 
@@ -219,12 +219,12 @@ function containerStyle(state: PanelState): React.CSSProperties {
   return {
     ...base,
     top: 0,
-    left: 0,
+    right: 0,
     bottom: 0,
-    width: 'min(420px, 38vw)',
+    width: 'min(480px, 42vw)',
     background: 'rgba(10, 12, 18, 0.92)',
     backdropFilter: 'blur(20px)',
-    borderRight: '1px solid rgba(255,255,255,0.08)',
+    borderLeft: '1px solid rgba(255,255,255,0.08)',
   }
 }
 
@@ -259,8 +259,7 @@ function messageBubbleStyle(role: string): React.CSSProperties {
 const statusStyle: React.CSSProperties = {
   position: 'absolute',
   bottom: '100%',
-  left: '50%',
-  transform: 'translateX(-50%)',
+  right: 0,
   marginBottom: 8,
   padding: '6px 14px',
   background: 'rgba(10, 12, 18, 0.85)',

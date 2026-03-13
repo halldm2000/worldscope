@@ -103,8 +103,17 @@ const zoomIn: CommandEntry = {
   handler: () => {
     const viewer = getViewer()
     if (!viewer) return
-    const height = viewer.camera.positionCartographic.height
-    viewer.camera.moveForward(height * 0.4)
+    const pos = viewer.camera.positionCartographic
+    const newHeight = Math.max(pos.height * 0.4, 100) // don't go below 100m
+    viewer.camera.flyTo({
+      destination: Cesium.Cartesian3.fromRadians(pos.longitude, pos.latitude, newHeight),
+      orientation: {
+        heading: viewer.camera.heading,
+        pitch: viewer.camera.pitch,
+        roll: 0,
+      },
+      duration: 1.5,
+    })
   },
 }
 
@@ -119,8 +128,17 @@ const zoomOut: CommandEntry = {
   handler: () => {
     const viewer = getViewer()
     if (!viewer) return
-    const height = viewer.camera.positionCartographic.height
-    viewer.camera.moveBackward(height * 0.6)
+    const pos = viewer.camera.positionCartographic
+    const newHeight = Math.min(pos.height * 2.5, 30_000_000) // don't go past orbit
+    viewer.camera.flyTo({
+      destination: Cesium.Cartesian3.fromRadians(pos.longitude, pos.latitude, newHeight),
+      orientation: {
+        heading: viewer.camera.heading,
+        pitch: viewer.camera.pitch,
+        roll: 0,
+      },
+      duration: 1.5,
+    })
   },
 }
 
