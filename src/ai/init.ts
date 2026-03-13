@@ -4,34 +4,38 @@
  */
 
 import { registry } from './registry'
-import { registerProvider } from './router'
+import { registerProvider, removeProvider } from './router'
 import { coreCommands } from './core-commands'
 import { ClaudeProvider } from './providers/claude'
 
-let initialized = false
+let commandsRegistered = false
+let claudeAdded = false
 
 export function initAI(options?: { anthropicKey?: string | null }): void {
-  if (initialized) return
-  initialized = true
-
-  // Register core commands
-  registry.registerAll(coreCommands)
-
-  // Set up Claude provider if API key is available
-  if (options?.anthropicKey) {
-    registerProvider(new ClaudeProvider(options.anthropicKey))
+  // Register core commands once
+  if (!commandsRegistered) {
+    registry.registerAll(coreCommands)
+    commandsRegistered = true
   }
 
-  console.log(
-    `[AI] Initialized with ${registry.getAll().length} commands` +
-    (options?.anthropicKey ? ', Claude provider active' : ', no cloud provider')
-  )
+  // Add Claude provider if key is available and we haven't already
+  if (options?.anthropicKey && !claudeAdded) {
+    registerProvider(new ClaudeProvider(options.anthropicKey))
+    claudeAdded = true
+    console.log(`[AI] Initialized with ${registry.getAll().length} commands, Claude provider active`)
+  } else if (!claudeAdded) {
+    console.log(`[AI] Initialized with ${registry.getAll().length} commands, no cloud provider`)
+  }
 }
 
 /**
- * Hot-add a Claude provider (e.g. after user enters API key).
+ * Hot-add a Claude provider (e.g. after user enters API key via command).
  */
 export function addClaudeProvider(apiKey: string): void {
+  if (claudeAdded) {
+    removeProvider('claude')
+  }
   registerProvider(new ClaudeProvider(apiKey))
+  claudeAdded = true
   console.log('[AI] Claude provider added')
 }

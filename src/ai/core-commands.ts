@@ -6,6 +6,7 @@
 import * as Cesium from 'cesium'
 import type { CommandEntry } from './types'
 import { getViewer } from '@/scene/engine'
+import { toggleMute, isMuted } from '@/audio/sounds'
 
 // --- Navigation commands ---
 
@@ -55,11 +56,30 @@ const goTo: CommandEntry = {
       }
 
       console.log('[go-to] Location not in lookup table, trying geocoder...')
-      // Fallback: use Cesium Ion geocoder via viewer
-      const geocoder = new Cesium.IonGeocoderService({ scene: viewer.scene })
-      const results = await geocoder.geocode(place, Cesium.GeocodeType.SEARCH)
-      if (results && results.length > 0) {
-        viewer.camera.flyTo({ destination: results[0].destination, duration: 2.0 })
+      // Fallback: OpenStreetMap Nominatim geocoder (free, no key needed)
+      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(place)}&format=json&limit=1`
+      const resp = await fetch(url, {
+        headers: { 'User-Agent': 'EarthExplorer/1.0' },
+      })
+      const data = await resp.json()
+      if (data && data.length > 0) {
+        const lat = parseFloat(data[0].lat)
+        const lon = parseFloat(data[0].lon)
+        // Estimate zoom based on place type
+        const type = data[0].type || ''
+        let height = 50_000
+        if (['continent'].includes(type)) height = 5_000_000
+        else if (['country', 'state'].includes(type)) height = 500_000
+        else if (['county', 'region'].includes(type)) height = 200_000
+        else if (['city', 'town', 'village'].includes(type)) height = 30_000
+        else if (['suburb', 'neighbourhood'].includes(type)) height = 5_000
+        else if (['building', 'house'].includes(type)) height = 1_000
+
+        console.log(`[go-to] Geocoder found: ${data[0].display_name} (${lat}, ${lon}, type: ${type})`)
+        viewer.camera.flyTo({
+          destination: Cesium.Cartesian3.fromDegrees(lon, lat, height),
+          duration: 2.0,
+        })
       } else {
         console.warn('[go-to] No geocoder results for:', place)
       }
@@ -266,8 +286,54 @@ const whatCanYouDo: CommandEntry = {
   description: 'List available commands and features',
   patterns: ['help', 'what can you do', 'commands', 'list commands', '?'],
   params: [],
-  // Handler is a no-op here; the router intercepts this and generates the help text
-  handler: () => {},
+  // Handler returns help text; the router detects this command and shows the output
+  handler: () => {
+    // Import registry lazily to avoid circular dependency
+    const { registry } = require('./registry')
+    const cmds = registry.getAll() as CommandEntry[]
+    const categories: Record<string, CommandEntry[]> = {}
+    for (const cmd of cmds) {
+      const cat = cmd.category || 'other'
+      if (!categories[cat]) categories[cat] = []
+      categories[cat].push(cmd)
+    }
+    const lines: string[] = ['Available commands:\n']
+    const catLabels: Record<string, string> = {
+      navigation: 'Navigation',
+      view: 'View',
+      audio: 'Audio',
+      system: 'System',
+      feature: 'Features',
+      other: 'Other',
+    }
+    for (const [cat, label] of Object.entries(catLabels)) {
+      if (!categories[cat]) continue
+      lines.push(`${label}:`)
+      for (const cmd of categories[cat]) {
+        const example = cmd.patterns[0] || cmd.name.toLowerCase()
+        lines.push(`  "${example}" — ${cmd.description}`)
+      }
+      lines.push('')
+    }
+    lines.push('Keyboard: Tab or / to focus, ` to cycle panel, Esc to minimize')
+    lines.push('Navigation: WASD/arrows to move, Q/E to twist, Shift/Space altitude')
+    // Store for the router to pick up
+    ;(whatCanYouDo as any)._lastOutput = lines.join('\n')
+  },
+}
+
+const muteToggle: CommandEntry = {
+  id: 'core:mute',
+  name: 'Toggle mute',
+  module: 'core',
+  category: 'audio',
+  description: 'Mute or unmute all sounds',
+  patterns: ['mute', 'unmute', 'toggle mute', 'sound off', 'sound on'],
+  params: [],
+  handler: () => {
+    const nowMuted = toggleMute()
+    console.log('[audio]', nowMuted ? 'Muted' : 'Unmuted')
+  },
 }
 
 const fullscreen: CommandEntry = {
@@ -284,6 +350,27 @@ const fullscreen: CommandEntry = {
     } else {
       document.documentElement.requestFullscreen()
     }
+  },
+}
+
+const setApiKey: CommandEntry = {
+  id: 'core:set-key',
+  name: 'Set API key',
+  module: 'core',
+  category: 'system',
+  description: 'Set the Anthropic API key for AI chat',
+  patterns: ['set key {key}', 'set api key {key}', 'anthropic key {key}'],
+  params: [{ name: 'key', type: 'string', required: true, description: 'Anthropic API key' }],
+  handler: (params) => {
+    const key = String(params.key).trim()
+    if (!key.startsWith('sk-')) {
+      console.warn('[set-key] Invalid key format (should start with sk-)')
+      return
+    }
+    localStorage.setItem('ee-anthropic-key', key)
+    // Hot-add the provider
+    const { addClaudeProvider } = require('./init')
+    addClaudeProvider(key)
   },
 }
 
@@ -331,5 +418,5 @@ const KNOWN_LOCATIONS: Record<string, { lat: number; lon: number; height?: numbe
 export const coreCommands: CommandEntry[] = [
   goTo, resetView, zoomIn, zoomOut, faceNorth,
   toggleBuildings, toggleTerrain, toggleLighting, setTimeOfDay,
-  whatCanYouDo, fullscreen,
+  muteToggle, whatCanYouDo, fullscreen, setApiKey,
 ]

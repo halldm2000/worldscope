@@ -70,7 +70,7 @@ export const createChatSlice: StateCreator<ChatSlice> = (set, get) => ({
   statusText: null,
   setStatusText: (text) => set({ statusText: text }),
 
-  anthropicKey: localStorage.getItem('ee-anthropic-key'),
+  anthropicKey: import.meta.env.VITE_ANTHROPIC_API_KEY || localStorage.getItem('ee-anthropic-key'),
   setAnthropicKey: (key) => {
     if (key) {
       localStorage.setItem('ee-anthropic-key', key)

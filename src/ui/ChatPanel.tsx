@@ -12,6 +12,7 @@ import { useStore } from '@/store'
 import { route } from '@/ai/router'
 import { registry } from '@/ai/registry'
 import type { PanelState } from '@/ai/types'
+import { playClick, playWhoosh, playPing, playSuccess, toggleMute } from '@/audio/sounds'
 
 export function ChatPanel() {
   const panelState = useStore(s => s.panelState)
@@ -64,6 +65,9 @@ export function ChatPanel() {
         setPanelState('minimized')
         inputRef.current?.blur()
       }
+      if (e.key === 'm' || e.key === 'M') {
+        toggleMute()
+      }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
@@ -75,23 +79,36 @@ export function ChatPanel() {
     if (!text) return
 
     setInputValue('')
+    playClick()
 
     // Add user message
     addMessage({ role: 'user', content: text })
 
-    // Route through AI system
-    const result = await route(text)
+    // Build history for context
+    const history = messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }))
 
-    if (result.command) {
+    // Route through AI system
+    const result = await route(text, history)
+
+    if (result.command && !result.response) {
       // Command was executed, show confirmation
       const confirmation = `${result.command.name}`
+
+      // Play appropriate sound based on command category
+      const cat = result.command.category
+      if (cat === 'navigation') playWhoosh()
+      else if (cat === 'view') playPing()
+      else playSuccess()
+
       if (panelState === 'minimized') {
         setStatusText(confirmation)
       } else {
         addMessage({ role: 'assistant', content: confirmation })
       }
-    } else if (result.response) {
-      // Streaming chat response
+    }
+
+    if (result.response) {
+      // Streaming or static response (from help, chat, or no-provider message)
       addMessage({ role: 'assistant', content: '' })
 
       // If minimized, auto-expand to peek so user sees the response
@@ -105,7 +122,7 @@ export function ChatPanel() {
         updateLastAssistant(accumulated)
       }
     }
-  }, [inputValue, panelState, setInputValue, addMessage, updateLastAssistant, setStatusText, setPanelState])
+  }, [inputValue, messages, panelState, setInputValue, addMessage, updateLastAssistant, setStatusText, setPanelState])
 
   // Autocomplete suggestions
   const suggestions = inputValue.length > 0

@@ -194,7 +194,7 @@ function setupKeyboard(viewer: Cesium.Viewer) {
   document.addEventListener('keydown', (e) => {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
     // Don't capture keys used by the chat panel
-    if (e.key === '`' || e.key === '/' || e.key === 'Tab' || e.key === 'Escape') return
+    if (e.key === '`' || e.key === '/' || e.key === 'Tab' || e.key === 'Escape' || e.key === 'm' || e.key === 'M') return
     flags[e.key.toLowerCase()] = true
 
     // R = reset view

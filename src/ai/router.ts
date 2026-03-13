@@ -33,9 +33,9 @@ export function getProviders(): AIProvider[] {
 
 /**
  * Route user input through the tier chain.
- * Returns the result (matched command or chat response).
+ * Accepts recent chat history for context in cloud conversations.
  */
-export async function route(input: string): Promise<RouteResult> {
+export async function route(input: string, history?: ChatMessage[]): Promise<RouteResult> {
   const trimmed = input.trim()
   if (!trimmed) {
     return { tier: 'pattern', params: {} }
@@ -44,13 +44,25 @@ export async function route(input: string): Promise<RouteResult> {
   // --- Tier 0: Pattern matching ---
   const patternMatch = matchPattern(trimmed, registry.getAll())
   if (patternMatch) {
-    // Execute the command
     console.log('[router] Tier 0 match:', patternMatch.command.id, patternMatch.params)
     try {
       await patternMatch.command.handler(patternMatch.params)
     } catch (err) {
       console.error('[router] Command handler error:', err)
     }
+
+    // Check if command produced output (e.g. help)
+    const output = (patternMatch.command as any)._lastOutput as string | undefined
+    if (output) {
+      delete (patternMatch.command as any)._lastOutput
+      return {
+        tier: 'pattern',
+        command: patternMatch.command,
+        params: patternMatch.params,
+        response: (async function* () { yield output })(),
+      }
+    }
+
     return {
       tier: 'pattern',
       command: patternMatch.command,
@@ -62,9 +74,20 @@ export async function route(input: string): Promise<RouteResult> {
   const chatProvider = await findChatProvider()
   if (chatProvider) {
     const systemPrompt = buildSystemPrompt()
-    const messages: ChatMessage[] = [
-      { role: 'user', content: trimmed },
-    ]
+
+    // Build messages with recent history for context
+    const messages: ChatMessage[] = []
+    if (history && history.length > 0) {
+      // Include last 10 messages for context
+      const recent = history.slice(-10)
+      for (const msg of recent) {
+        if (msg.role === 'user' || msg.role === 'assistant') {
+          messages.push({ role: msg.role, content: msg.content })
+        }
+      }
+    }
+    messages.push({ role: 'user', content: trimmed })
+
     const response = chatProvider.chat(messages, { systemPrompt })
     return {
       tier: 'cloud-chat',
@@ -76,7 +99,7 @@ export async function route(input: string): Promise<RouteResult> {
   return {
     tier: 'pattern',
     response: (async function* () {
-      yield "I can't process that right now (no AI provider configured). Try a direct command like 'go to Berlin' or type 'help' for available commands."
+      yield "No AI provider configured. Try a direct command like \"go to Berlin\" or type \"help\" for available commands.\n\nTo enable AI chat, add VITE_ANTHROPIC_API_KEY to your .env file, or type: set key sk-ant-..."
     })(),
   }
 }
@@ -172,15 +195,21 @@ async function findChatProvider(): Promise<AIProvider | null> {
 
 function buildSystemPrompt(): string {
   const commands = registry.getAll()
-  const commandList = commands.map(c => `- ${c.name}: ${c.description}`).join('\n')
+  const commandList = commands
+    .filter(c => c.id !== 'core:set-key') // Don't expose key command to AI
+    .map(c => `- "${c.patterns[0]}": ${c.description}`)
+    .join('\n')
 
-  return `You are an AI assistant embedded in Earth Explorer, an interactive 3D globe application.
-You help users explore and understand Earth through data visualization, scientific analysis, and natural conversation.
+  return `You are an AI assistant embedded in Earth Explorer, an interactive 3D globe application built with CesiumJS. You help users explore and understand Earth through data visualization, scientific analysis, and natural conversation.
 
-You have access to these commands (execute them by including the exact command in your response):
+Available commands the user can type directly:
 ${commandList}
 
-When users ask about a location, scientific concept, or data, provide clear and informative responses.
-Keep responses concise when the chat panel is small. Be more detailed when the user is in research mode.
-You are knowledgeable about Earth science, meteorology, climate, geography, and remote sensing.`
+Your role:
+- Answer questions about geography, Earth science, meteorology, climate, remote sensing, and related topics
+- Keep responses concise (2-4 sentences) unless the user is clearly in research mode asking for depth
+- When a user asks about a place, you can mention interesting facts about it
+- You are knowledgeable about NVIDIA Earth-2, weather/climate AI models, and scientific computing
+- Use commas or parentheses instead of em dashes
+- Be direct and informative, not chatty`
 }
