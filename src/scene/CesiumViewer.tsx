@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import * as Cesium from 'cesium'
 import { useStore } from '@/store'
-import { setViewer } from './engine'
+import { setViewer, setBuildingTilesets, updateBuildingMode } from './engine'
 import { playRumble } from '@/audio/sounds'
 
 const MAX_ALTITUDE = 25_000_000 // 25,000 km
@@ -11,7 +11,6 @@ export function CesiumViewer() {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<Cesium.Viewer | null>(null)
   const cesiumToken = useStore(s => s.cesiumToken)
-  const googleMapsKey = useStore(s => s.googleMapsKey)
   const [status, setStatus] = useState({ lat: 0, lon: 0, alt: 0, heading: 0 })
   const [loading, setLoading] = useState(true)
 
@@ -48,23 +47,25 @@ export function CesiumViewer() {
       } catch (e) { console.warn('Terrain failed:', e) }
       if (disposed) return
 
-      // Buildings (try Google Photorealistic first, fall back to OSM)
-      let buildingsLoaded = false
-      if (googleMapsKey) {
-        try {
-          const t = await Cesium.Cesium3DTileset.fromUrl(
-            `https://tile.googleapis.com/v1/3dtiles/root.json?key=${googleMapsKey}`
-          )
-          viewer.scene.primitives.add(t)
-          buildingsLoaded = true
-        } catch (e) { console.warn('Google 3D Tiles failed, falling back to OSM:', e) }
-      }
-      if (!buildingsLoaded) {
-        try {
-          const osm = await Cesium.Cesium3DTileset.fromIonAssetId(96188)
-          viewer.scene.primitives.add(osm)
-        } catch (e) { console.warn('OSM Buildings also failed:', e) }
-      }
+      // Load both building tilesets; OSM visible by default, photorealistic available via command
+      let osmTileset: Cesium.Cesium3DTileset | null = null
+      let photoTileset: Cesium.Cesium3DTileset | null = null
+
+      try {
+        osmTileset = await Cesium.Cesium3DTileset.fromIonAssetId(96188)
+        osmTileset.preloadFlightDestinations = true
+        viewer.scene.primitives.add(osmTileset)
+      } catch (e) { console.warn('OSM Buildings failed:', e) }
+
+      try {
+        photoTileset = await Cesium.createGooglePhotorealistic3DTileset()
+        photoTileset.show = false
+        photoTileset.preloadWhenHidden = true
+        photoTileset.preloadFlightDestinations = true
+        viewer.scene.primitives.add(photoTileset)
+      } catch (e) { console.warn('Photorealistic 3D Tiles failed:', e) }
+
+      setBuildingTilesets(osmTileset, photoTileset)
       if (disposed) return
 
       // Scene config
@@ -107,6 +108,9 @@ export function CesiumViewer() {
               },
             })
           }
+          // Auto-switch building tilesets based on altitude
+          updateBuildingMode(c.height)
+
           setStatus({
             lat: Cesium.Math.toDegrees(c.latitude),
             lon: Cesium.Math.toDegrees(c.longitude),
@@ -135,7 +139,7 @@ export function CesiumViewer() {
         viewerRef.current = null
       }
     }
-  }, [cesiumToken, googleMapsKey])
+  }, [cesiumToken])
 
   const altStr = status.alt > 100_000
     ? (status.alt / 1000).toFixed(0) + ' km'

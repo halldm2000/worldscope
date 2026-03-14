@@ -5,7 +5,7 @@
 
 import * as Cesium from 'cesium'
 import type { CommandEntry } from './types'
-import { getViewer } from '@/scene/engine'
+import { getViewer, getBuildingMode, setBuildingMode, setAutoSwitch } from '@/scene/engine'
 import { toggleMute, isMuted, playRumble } from '@/audio/sounds'
 
 // --- Navigation commands ---
@@ -194,19 +194,18 @@ const toggleBuildings: CommandEntry = {
   name: 'Toggle buildings',
   module: 'core',
   category: 'view',
-  description: 'Show or hide 3D buildings',
-  patterns: ['toggle buildings', 'show buildings', 'hide buildings', 'buildings on', 'buildings off'],
+  description: 'Switch between photorealistic and OSM buildings',
+  patterns: [
+    'toggle buildings', 'switch buildings',
+    'photorealistic', 'photorealistic buildings', 'google buildings',
+    'osm buildings', 'simple buildings', 'white buildings',
+    'show buildings', 'hide buildings', 'buildings on', 'buildings off',
+  ],
   params: [],
   handler: () => {
-    const viewer = getViewer()
-    if (!viewer) return
-    const prims = viewer.scene.primitives
-    for (let i = 0; i < prims.length; i++) {
-      const p = prims.get(i)
-      if (p instanceof Cesium.Cesium3DTileset) {
-        p.show = !p.show
-      }
-    }
+    setAutoSwitch(false) // manual override disables auto-switching
+    const current = getBuildingMode()
+    setBuildingMode(current === 'osm' ? 'photorealistic' : 'osm')
   },
 }
 
@@ -363,19 +362,28 @@ const setApiKey: CommandEntry = {
   name: 'Set API key',
   module: 'core',
   category: 'system',
-  description: 'Set the Anthropic API key for AI chat',
-  patterns: ['set key {key}', 'set api key {key}', 'anthropic key {key}'],
-  params: [{ name: 'key', type: 'string', required: true, description: 'Anthropic API key' }],
+  description: 'Set an API key (anthropic or cesium)',
+  patterns: [
+    'set key {key}', 'set api key {key}', 'anthropic key {key}',
+    'set cesium token {key}', 'cesium token {key}',
+  ],
+  params: [{ name: 'key', type: 'string', required: true, description: 'API key or token' }],
   handler: (params) => {
     const key = String(params.key).trim()
-    if (!key.startsWith('sk-')) {
-      console.warn('[set-key] Invalid key format (should start with sk-)')
-      return
+    if (key.startsWith('sk-')) {
+      // Anthropic key
+      localStorage.setItem('ee-anthropic-key', key)
+      const { addClaudeProvider } = require('./init')
+      addClaudeProvider(key)
+      console.log('[set-key] Anthropic API key set')
+    } else if (key.startsWith('eyJ')) {
+      // Cesium Ion token (JWT)
+      const { useStore } = require('@/store')
+      useStore.getState().setCesiumToken(key)
+      console.log('[set-key] Cesium Ion token set (reload to apply)')
+    } else {
+      console.warn('[set-key] Unrecognized key format. Anthropic keys start with sk-, Cesium tokens start with eyJ')
     }
-    localStorage.setItem('ee-anthropic-key', key)
-    // Hot-add the provider
-    const { addClaudeProvider } = require('./init')
-    addClaudeProvider(key)
   },
 }
 
