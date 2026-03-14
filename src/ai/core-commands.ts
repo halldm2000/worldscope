@@ -103,7 +103,7 @@ const resetView: CommandEntry = {
     if (!viewer) return
     playRumble()
     viewer.camera.flyTo({
-      destination: Cesium.Cartesian3.fromDegrees(10, 30, 15_000_000),
+      destination: Cesium.Cartesian3.fromDegrees(10, 30, 25_000_000),
       orientation: {
         heading: Cesium.Math.toRadians(0),
         pitch: Cesium.Math.toRadians(-90),
@@ -153,7 +153,7 @@ const zoomOut: CommandEntry = {
     if (!viewer) return
     playRumble()
     const pos = viewer.camera.positionCartographic
-    const newHeight = Math.min(pos.height * 2.5, 30_000_000) // don't go past orbit
+    const newHeight = Math.min(pos.height * 2.5, 25_000_000) // max 25,000 km
     viewer.camera.flyTo({
       destination: Cesium.Cartesian3.fromRadians(pos.longitude, pos.latitude, newHeight),
       orientation: {

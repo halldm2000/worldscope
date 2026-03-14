@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import * as Cesium from 'cesium'
 import { useStore } from '@/store'
 import { setViewer } from './engine'
+import { playRumble } from '@/audio/sounds'
 
-const HOME = { lon: 10, lat: 30, height: 15_000_000, heading: 0, pitch: -90 }
+const MAX_ALTITUDE = 25_000_000 // 25,000 km
+const HOME = { lon: 10, lat: 30, height: MAX_ALTITUDE, heading: 0, pitch: -90 }
 
 export function CesiumViewer() {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -90,10 +92,21 @@ export function CesiumViewer() {
         },
       })
 
-      // Camera status sync
+      // Camera status sync + altitude clamp
       scene.postRender.addEventListener(() => {
         const c = viewer.camera.positionCartographic
         if (c) {
+          // Enforce max altitude
+          if (c.height > MAX_ALTITUDE) {
+            viewer.camera.setView({
+              destination: Cesium.Cartesian3.fromRadians(c.longitude, c.latitude, MAX_ALTITUDE),
+              orientation: {
+                heading: viewer.camera.heading,
+                pitch: viewer.camera.pitch,
+                roll: viewer.camera.roll,
+              },
+            })
+          }
           setStatus({
             lat: Cesium.Math.toDegrees(c.latitude),
             lon: Cesium.Math.toDegrees(c.longitude),
@@ -196,6 +209,7 @@ function setupKeyboard(viewer: Cesium.Viewer) {
 
     // R = reset view
     if (e.key.toLowerCase() === 'r') {
+      playRumble()
       viewer.camera.flyTo({
         destination: Cesium.Cartesian3.fromDegrees(HOME.lon, HOME.lat, HOME.height),
         orientation: {
