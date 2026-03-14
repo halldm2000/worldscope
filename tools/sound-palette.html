@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Earth Explorer Sound Palette</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0a0c12;
+    color: #e0e0e0;
+    padding: 24px;
+    line-height: 1.5;
+  }
+  h1 { font-size: 22px; color: #76B900; margin-bottom: 4px; }
+  .subtitle { color: #888; font-size: 13px; margin-bottom: 24px; }
+  h2 { font-size: 15px; color: #aaa; text-transform: uppercase; letter-spacing: 0.08em; margin: 24px 0 12px; }
+  .section {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+  button {
+    background: rgba(118, 185, 0, 0.15);
+    border: 1px solid rgba(118, 185, 0, 0.3);
+    color: #c0d890;
+    padding: 8px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    font-family: inherit;
+    transition: all 0.15s;
+  }
+  button:hover { background: rgba(118, 185, 0, 0.25); border-color: rgba(118, 185, 0, 0.5); }
+  button:active { transform: scale(0.97); }
+  button.category { background: rgba(100,140,255,0.12); border-color: rgba(100,140,255,0.25); color: #a0b8e0; }
+  button.category:hover { background: rgba(100,140,255,0.2); }
+  button.danger { background: rgba(255,80,80,0.12); border-color: rgba(255,80,80,0.25); color: #e0a0a0; }
+  .slider-row { display: flex; align-items: center; gap: 12px; margin: 6px 0; }
+  .slider-row label { min-width: 110px; font-size: 12px; color: #888; }
+  .slider-row input[type=range] { flex: 1; accent-color: #76B900; }
+  .slider-row .value { min-width: 50px; font-size: 12px; color: #aaa; text-align: right; font-variant-numeric: tabular-nums; }
+  .desc { font-size: 12px; color: #666; margin-top: 4px; }
+  .playing { border-color: #76B900 !important; box-shadow: 0 0 8px rgba(118,185,0,0.3); }
+  #log {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: rgba(0,0,0,0.9); padding: 8px 16px;
+    font-family: 'SF Mono', Monaco, monospace; font-size: 11px;
+    color: #76B900; max-height: 60px; overflow-y: auto;
+    border-top: 1px solid rgba(118,185,0,0.2);
+  }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<h1>Sound Palette</h1>
+<p class="subtitle">Click any sound to preview. Adjust sliders to shape it. Use these to decide what works for navigation, data loading, errors, etc.</p>
+
+<div class="grid">
+
+<!-- TONES -->
+<div class="section">
+  <h2>Tones</h2>
+  <div class="row">
+    <button onclick="playTone('sine')">Sine</button>
+    <button onclick="playTone('triangle')">Triangle</button>
+    <button onclick="playTone('square')">Square</button>
+    <button onclick="playTone('sawtooth')">Sawtooth</button>
+  </div>
+  <div class="slider-row">
+    <label>Frequency</label>
+    <input type="range" id="toneFreq" min="30" max="2000" value="440" oninput="updateVal(this)">
+    <span class="value" id="toneFreqVal">440 Hz</span>
+  </div>
+  <div class="slider-row">
+    <label>End Frequency</label>
+    <input type="range" id="toneEndFreq" min="30" max="2000" value="440" oninput="updateVal(this)">
+    <span class="value" id="toneEndFreqVal">440 Hz</span>
+  </div>
+  <div class="slider-row">
+    <label>Duration</label>
+    <input type="range" id="toneDur" min="0.05" max="1.5" value="0.2" step="0.05" oninput="updateVal(this)">
+    <span class="value" id="toneDurVal">0.20 s</span>
+  </div>
+  <div class="slider-row">
+    <label>Volume</label>
+    <input type="range" id="toneVol" min="0.01" max="1" value="0.3" step="0.01" oninput="updateVal(this)">
+    <span class="value" id="toneVolVal">0.30</span>
+  </div>
+  <p class="desc">Basic oscillator tones. Sweep frequency by setting different start/end values.</p>
+</div>
+
+<!-- CHORDS / MULTI-TONE -->
+<div class="section">
+  <h2>Chords &amp; Multi-tone</h2>
+  <div class="row">
+    <button onclick="playChord([440, 554, 659])">Major (A)</button>
+    <button onclick="playChord([440, 523, 659])">Minor (Am)</button>
+    <button onclick="playChord([261, 329, 392, 523])">C Maj7</button>
+    <button onclick="playChord([220, 277, 329])">Power</button>
+    <button onclick="playRising()">Rising ding</button>
+    <button onclick="playFalling()">Falling ding</button>
+    <button onclick="playDoubleBeep()">Double beep</button>
+  </div>
+  <p class="desc">Multi-note sounds. Good for confirmations, errors, achievements.</p>
+</div>
+
+<!-- NOISE -->
+<div class="section">
+  <h2>Noise &amp; Rumble</h2>
+  <div class="row">
+    <button onclick="playNoise('lowpass')">Low rumble</button>
+    <button onclick="playNoise('highpass')">Hiss</button>
+    <button onclick="playNoise('bandpass')">Mid whoosh</button>
+    <button onclick="playWhooshSweep()">Whoosh sweep</button>
+    <button onclick="playThunder()">Thunder</button>
+    <button onclick="playWind()">Steady wind</button>
+  </div>
+  <div class="slider-row">
+    <label>Filter freq</label>
+    <input type="range" id="noiseFreq" min="20" max="3000" value="200" oninput="updateVal(this)">
+    <span class="value" id="noiseFreqVal">200 Hz</span>
+  </div>
+  <div class="slider-row">
+    <label>Duration</label>
+    <input type="range" id="noiseDur" min="0.1" max="3" value="0.5" step="0.1" oninput="updateVal(this)">
+    <span class="value" id="noiseDurVal">0.50 s</span>
+  </div>
+  <div class="slider-row">
+    <label>Volume</label>
+    <input type="range" id="noiseVol" min="0.01" max="1" value="0.3" step="0.01" oninput="updateVal(this)">
+    <span class="value" id="noiseVolVal">0.30</span>
+  </div>
+  <p class="desc">Filtered white noise. Low rumble for movement, hiss for atmosphere, whoosh for transitions.</p>
+</div>
+
+<!-- IMPACTS -->
+<div class="section">
+  <h2>Impacts &amp; Clicks</h2>
+  <div class="row">
+    <button onclick="playImpact(800, 200)">Soft click</button>
+    <button onclick="playImpact(1200, 400)">Hard click</button>
+    <button onclick="playImpact(300, 80)">Deep thud</button>
+    <button onclick="playImpact(2000, 800)">Tap</button>
+    <button onclick="playBubble()">Bubble pop</button>
+    <button onclick="playSnap()">Snap</button>
+  </div>
+  <p class="desc">Short percussive sounds. Good for UI interactions, button presses, selections.</p>
+</div>
+
+<!-- SWEEPS -->
+<div class="section">
+  <h2>Sweeps &amp; Transitions</h2>
+  <div class="row">
+    <button onclick="playSweep(200, 1000, 'sine')">Rise (sine)</button>
+    <button onclick="playSweep(1000, 200, 'sine')">Fall (sine)</button>
+    <button onclick="playSweep(100, 800, 'sawtooth')">Rise (saw)</button>
+    <button onclick="playSweep(800, 100, 'sawtooth')">Fall (saw)</button>
+    <button onclick="playShimmer()">Shimmer</button>
+    <button onclick="playWarp()">Warp</button>
+  </div>
+  <div class="slider-row">
+    <label>Sweep duration</label>
+    <input type="range" id="sweepDur" min="0.1" max="2" value="0.4" step="0.05" oninput="updateVal(this)">
+    <span class="value" id="sweepDurVal">0.40 s</span>
+  </div>
+  <p class="desc">Frequency sweeps for transitions, loading states, mode changes.</p>
+</div>
+
+<!-- CONTINUOUS -->
+<div class="section">
+  <h2>Continuous (hold to hear)</h2>
+  <div class="row">
+    <button onmousedown="startDrone(40)" onmouseup="stopDrone()" ontouchstart="startDrone(40)" ontouchend="stopDrone()">Deep drone 40Hz</button>
+    <button onmousedown="startDrone(60)" onmouseup="stopDrone()" ontouchstart="startDrone(60)" ontouchend="stopDrone()">Drone 60Hz</button>
+    <button onmousedown="startDrone(80)" onmouseup="stopDrone()" ontouchstart="startDrone(80)" ontouchend="stopDrone()">Drone 80Hz</button>
+    <button onmousedown="startRumbleDrone()" onmouseup="stopDrone()" ontouchstart="startRumbleDrone()" ontouchend="stopDrone()">Noise rumble</button>
+    <button onmousedown="startDualDrone()" onmouseup="stopDrone()" ontouchstart="startDualDrone()" ontouchend="stopDrone()">Dual layer</button>
+  </div>
+  <div class="slider-row">
+    <label>Drone volume</label>
+    <input type="range" id="droneVol" min="0.01" max="0.5" value="0.15" step="0.01" oninput="updateVal(this)">
+    <span class="value" id="droneVolVal">0.15</span>
+  </div>
+  <p class="desc">Hold mouse down to hear continuous sounds. Good for flight rumble, ambient background.</p>
+</div>
+
+<!-- PRESETS for Earth Explorer -->
+<div class="section" style="grid-column: 1 / -1">
+  <h2>Earth Explorer Presets</h2>
+  <p class="desc" style="margin-bottom: 12px">These are candidates for specific app events. Click to preview, tell me which you prefer.</p>
+  <div class="row">
+    <button class="category" onclick="presetNavConfirm()">Nav confirm</button>
+    <button class="category" onclick="presetDataLoaded()">Data loaded</button>
+    <button class="category" onclick="presetToggle()">Toggle on/off</button>
+    <button class="category" onclick="presetError()">Error</button>
+    <button class="category" onclick="presetSuccess()">Success</button>
+    <button class="category" onclick="presetZoomIn()">Zoom in</button>
+    <button class="category" onclick="presetZoomOut()">Zoom out</button>
+    <button class="category" onclick="presetLayerSwitch()">Layer switch</button>
+  </div>
+</div>
+
+</div>
+
+<div id="log"></div>
+
+<script>
+let ctx = null
+function getCtx() {
+  if (!ctx) ctx = new AudioContext()
+  if (ctx.state === 'suspended') ctx.resume()
+  return ctx
+}
+
+function log(msg) {
+  const el = document.getElementById('log')
+  el.textContent = msg
+}
+
+function updateVal(input) {
+  const span = document.getElementById(input.id + 'Val')
+  if (!span) return
+  const v = parseFloat(input.value)
+  if (input.id.includes('Freq')) span.textContent = Math.round(v) + ' Hz'
+  else if (input.id.includes('Dur')) span.textContent = v.toFixed(2) + ' s'
+  else span.textContent = v.toFixed(2)
+}
+
+// ---- TONES ----
+function playTone(type) {
+  const c = getCtx()
+  const freq = parseFloat(document.getElementById('toneFreq').value)
+  const endFreq = parseFloat(document.getElementById('toneEndFreq').value)
+  const dur = parseFloat(document.getElementById('toneDur').value)
+  const vol = parseFloat(document.getElementById('toneVol').value)
+
+  const osc = c.createOscillator()
+  const gain = c.createGain()
+  osc.type = type
+  osc.frequency.setValueAtTime(freq, c.currentTime)
+  if (Math.abs(endFreq - freq) > 1) {
+    osc.frequency.exponentialRampToValueAtTime(Math.max(endFreq, 1), c.currentTime + dur)
+  }
+  gain.gain.setValueAtTime(vol, c.currentTime)
+  gain.gain.exponentialRampToValueAtTime(0.001, c.currentTime + dur)
+  osc.connect(gain)
+  gain.connect(c.destination)
+  osc.start()
+  osc.stop(c.currentTime + dur + 0.05)
+  log(`Tone: ${type} ${freq}→${endFreq}Hz, ${dur}s, vol=${vol}`)
+}
+
+// ---- CHORDS ----
+function playChord(freqs) {
+  const c = getCtx()
+  const dur = 0.4
+  const vol = 0.12
+  freqs.forEach(f => {
+    const osc = c.createOscillator()
+    const gain = c.createGain()
+    osc.type = 'sine'
+    osc.frequency.value = f
+    gain.gain.setValueAtTime(vol, c.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, c.currentTime + dur)
+    osc.connect(gain)
+    gain.connect(c.destination)
+    osc.start()
+    osc.stop(c.currentTime + dur + 0.05)
+  })
+  log(`Chord: [${freqs.join(', ')}]Hz`)
+}
+
+function playRising() {
+  const c = getCtx()
+  ;[400, 500, 630].forEach((f, i) => {
+    const osc = c.createOscillator()
+    const gain = c.createGain()
+    osc.type = 'sine'
+    osc.frequency.value = f
+    const t = c.currentTime + i * 0.08
+    gain.gain.setValueAtTime(0, t - 0.01)
+    gain.gain.setValueAtTime(0.2, t)
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15)
+    osc.connect(gain)
+    gain.connect(c.destination)
+    osc.start(t)
+    osc.stop(t + 0.2)
+  })
+  log('Rising ding: 400 → 500 → 630 Hz')
+}
+
+function playFalling() {
+  const c = getCtx()
+  ;[630, 500, 400].forEach((f, i) => {
+    const osc = c.createOscillator()
+    const gain = c.createGain()
+    osc.type = 'sine'
+    osc.frequency.value = f
+    const t = c.currentTime + i * 0.08
+    gain.gain.setValueAtTime(0, t - 0.01)
+    gain.gain.setValueAtTime(0.2, t)
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15)
+    osc.connect(gain)
+    gain.connect(c.destination)
+    osc.start(t)
+    osc.stop(t + 0.2)
+  })
+  log('Falling ding: 630 → 500 → 400 Hz')
+}
+
+function playDoubleBeep() {
+  const c = getCtx()
+  ;[0, 0.1].forEach(delay => {
+    const osc = c.createOscillator()
+    const gain = c.createGain()
+    osc.type = 'sine'
+    osc.frequency.value = 880
+    const t = c.currentTime + delay
+    gain.gain.setValueAtTime(0.2, t)
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.06)
+    osc.connect(gain)
+    gain.connect(c.destination)
+    osc.start(t)
+    osc.stop(t + 0.08)
+  })
+  log('Double beep: 880Hz × 2')
+}
+
+// ---- NOISE ----
+function playNoise(filterType) {
+  const c = getCtx()
+  const freq = parseFloat(document.getElementById('noiseFreq').value)
+  const dur = parseFloat(document.getElementById('noiseDur').value)
+  const vol = parseFloat(document.getElementById('noiseVol').value)
+
+  const bufSize = c.sampleRate * dur
+  const buf = c.createBuffer(1, bufSize, c.sampleRate)
+  const d = buf.getChannelData(0)
+  for (let i = 0; i < bufSize; i++) d[i] = Math.random() * 2 - 1
+
+  const src = c.createBufferSource()
+  src.buffer = buf
+  const filter = c.createBiquadFilter()
+  filter.type = filterType
+  filter.frequency.value = freq
+  filter.Q.value = 0.7
+  const gain = c.createGain()
+  gain.gain.setValueAtTime(vol, c.currentTime)
+  gain.gain.exponentialRampToValueAtTime(0.001, c.currentTime + dur)
+  src.connect(filter)
+  filter.connect(gain)
+  gain.connect(c.destination)
+  src.start()
+  log(`Noise: ${filterType} @${freq}Hz, ${dur}s, vol=${vol}`)
+}
+
+function playWhooshSweep() {
+  const c = getCtx()
+  const dur = parseFloat(document.getElementById('noiseDur').value)
+  const vol = parseFloat(document.getElementById('noiseVol').value)
+  const bufSize = c.sampleRate * dur
+  const buf = c.createBuffer(1, bufSize, c.sampleRate)
+  const d = buf.getChannelData(0)
+  for (let i = 0; i < bufSize; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / bufSize)
+  const src = c.createBufferSource()
+  src.buffer = buf
+  const filter = c.createBiquadFilter()
+  filter.type = 'bandpass'
+  filter.frequency.setValueAtTime(2000, c.currentTime)
+  filter.frequency.exponentialRampToValueAtTime(100, c.currentTime + dur)
+  filter.Q.value = 1
+  const gain = c.createGain()
+  gain.gain.setValueAtTime(vol, c.currentTime)
+  gain.gain.exponentialRampToValueAtTime(0.001, c.currentTime + dur)
+  src.connect(filter)
+  filter.connect(gain)
+  gain.connect(c.destination)
+  src.start()
+  log(`Whoosh sweep: 2000→100Hz, ${dur}s`)
+}
+
+function playThunder() {
+  const c = getCtx()
+  const dur = 1.5
+  const bufSize = c.sampleRate * dur
+  const buf = c.createBuffer(1, bufSize, c.sampleRate)
+  const d = buf.getChannelData(0)
+  for (let i = 0; i < bufSize; i++) {
+    const env = Math.exp(-i / (c.sampleRate * 0.3))
+    d[i] = (Math.random() * 2 - 1) * env
+  }
+  const src = c.createBufferSource()
+  src.buffer = buf
+  const filter = c.createBiquadFilter()
+  filter.type = 'lowpass'
+  filter.frequency.setValueAtTime(300, c.currentTime)
+  filter.frequency.exponentialRampToValueAtTime(40, c.currentTime + dur)
+  filter.Q.value = 0.3
+  const gain = c.createGain()
+  gain.gain.setValueAtTime(0.4, c.currentTime)
+  gain.gain.exponentialRampToValueAtTime(0.001, c.currentTime + dur)
+  src.connect(filter)
+  filter.connect(gain)
+  gain.connect(c.destination)
+  src.start()
+  log('Thunder: exponential decay noise, lowpass 300→40Hz')
+}
+
+function playWind() {
+  const c = getCtx()
+  const dur = 2
+  const bufSize = c.sampleRate * dur
+  const buf = c.createBuffer(1, bufSize, c.sampleRate)
+  const d = buf.getChannelData(0)
+  for (let i = 0; i < bufSize; i++) d[i] = Math.random() * 2 - 1
+  const src = c.createBufferSource()
+  src.buffer = buf
+  const filter = c.createBiquadFilter()
+  filter.type = 'bandpass'
+  filter.frequency.setValueAtTime(400, c.currentTime)
+  filter.frequency.setValueAtTime(600, c.currentTime + 0.5)
+  filter.frequency.setValueAtTime(300, c.currentTime + 1.0)
+  filter.frequency.setValueAtTime(500, c.currentTime + 1.5)
+  filter.Q.value = 0.5
+  const gain = c.createGain()
+  gain.gain.setValueAtTime(0, c.currentTime)
+  gain.gain.linearRampToValueAtTime(0.15, c.currentTime + 0.3)
+  gain.gain.linearRampToValueAtTime(0.15, c.currentTime + dur - 0.3)
+  gain.gain.linearRampToValueAtTime(0, c.currentTime + dur)
+  src.connect(filter)
+  filter.connect(gain)
+  gain.connect(c.destination)
+  src.start()
+  log('Steady wind: bandpass noise with frequency modulation')
+}
+
+// ---- IMPACTS ----
+function playImpact(startFreq, endFreq) {
+  const c = getCtx()
+  const osc = c.createOscillator()
+  const gain = c.createGain()
+  osc.type = 'sine'
+  osc.frequency.setValueAtTime(startFreq, c.currentTime)
+  osc.frequency.exponentialRampToValueAtTime(endFreq, c.currentTime + 0.08)
+  gain.gain.setValueAtTime(0.35, c.currentTime)
+  gain.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.1)
+  osc.connect(gain)
+  gain.connect(c.destination)
+  osc.start()
+  osc.stop(c.currentTime + 0.12)
+  log(`Impact: ${startFreq}→${endFreq}Hz`)
+}
+
+function playBubble() {
+  const c = getCtx()
+  const osc = c.createOscillator()
+  const gain = c.createGain()
+  osc.type = 'sine'
+  osc.frequency.setValueAtTime(150, c.currentTime)
+  osc.frequency.exponentialRampToValueAtTime(600, c.currentTime + 0.05)
+  osc.frequency.exponentialRampToValueAtTime(400, c.currentTime + 0.12)
+  gain.gain.setValueAtTime(0.25, c.currentTime)
+  gain.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.15)
+  osc.connect(gain)
+  gain.connect(c.destination)
+  osc.start()
+  osc.stop(c.currentTime + 0.18)
+  log('Bubble pop: 150→600→400Hz')
+}
+
+function playSnap() {
+  const c = getCtx()
+  const bufSize = c.sampleRate * 0.03
+  const buf = c.createBuffer(1, bufSize, c.sampleRate)
+  const d = buf.getChannelData(0)
+  for (let i = 0; i < bufSize; i++) {
+    d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (c.sampleRate * 0.003))
+  }
+  const src = c.createBufferSource()
+  src.buffer = buf
+  const filter = c.createBiquadFilter()
+  filter.type = 'highpass'
+  filter.frequency.value = 1000
+  const gain = c.createGain()
+  gain.gain.value = 0.5
+  src.connect(filter)
+  filter.connect(gain)
+  gain.connect(c.destination)
+  src.start()
+  log('Snap: short noise burst, highpass 1000Hz')
+}
+
+// ---- SWEEPS ----
+function playSweep(startF, endF, type) {
+  const c = getCtx()
+  const dur = parseFloat(document.getElementById('sweepDur').value)
+  const osc = c.createOscillator()
+  const gain = c.createGain()
+  osc.type = type
+  osc.frequency.setValueAtTime(startF, c.currentTime)
+  osc.frequency.exponentialRampToValueAtTime(endF, c.currentTime + dur)
+  gain.gain.setValueAtTime(0.2, c.currentTime)
+  gain.gain.exponentialRampToValueAtTime(0.001, c.currentTime + dur)
+  osc.connect(gain)
+  gain.connect(c.destination)
+  osc.start()
+  osc.stop(c.currentTime + dur + 0.05)
+  log(`Sweep: ${type} ${startF}→${endF}Hz, ${dur}s`)
+}
+
+function playShimmer() {
+  const c = getCtx()
+  const dur = 0.6
+  ;[800, 1200, 1600, 2000].forEach((f, i) => {
+    const osc = c.createOscillator()
+    const gain = c.createGain()
+    osc.type = 'sine'
+    osc.frequency.value = f
+    const t = c.currentTime + i * 0.04
+    gain.gain.setValueAtTime(0, t)
+    gain.gain.linearRampToValueAtTime(0.08, t + 0.02)
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur - i * 0.04)
+    osc.connect(gain)
+    gain.connect(c.destination)
+    osc.start(t)
+    osc.stop(t + dur)
+  })
+  log('Shimmer: staggered harmonics 800/1200/1600/2000Hz')
+}
+
+function playWarp() {
+  const c = getCtx()
+  const dur = 0.5
+  const osc = c.createOscillator()
+  const gain = c.createGain()
+  osc.type = 'sawtooth'
+  osc.frequency.setValueAtTime(80, c.currentTime)
+  osc.frequency.exponentialRampToValueAtTime(2000, c.currentTime + dur * 0.3)
+  osc.frequency.exponentialRampToValueAtTime(60, c.currentTime + dur)
+  gain.gain.setValueAtTime(0.15, c.currentTime)
+  gain.gain.exponentialRampToValueAtTime(0.001, c.currentTime + dur)
+  osc.connect(gain)
+  gain.connect(c.destination)
+  osc.start()
+  osc.stop(c.currentTime + dur + 0.05)
+  log('Warp: sawtooth 80→2000→60Hz')
+}
+
+// ---- CONTINUOUS ----
+let droneNodes = []
+function startDrone(freq) {
+  stopDrone()
+  const c = getCtx()
+  const vol = parseFloat(document.getElementById('droneVol').value)
+  const osc = c.createOscillator()
+  const gain = c.createGain()
+  osc.type = 'sine'
+  osc.frequency.value = freq
+  gain.gain.setValueAtTime(0, c.currentTime)
+  gain.gain.linearRampToValueAtTime(vol, c.currentTime + 0.1)
+  osc.connect(gain)
+  gain.connect(c.destination)
+  osc.start()
+  droneNodes = [osc, gain]
+  log(`Drone: sine ${freq}Hz, vol=${vol} (hold to hear)`)
+}
+
+function startRumbleDrone() {
+  stopDrone()
+  const c = getCtx()
+  const vol = parseFloat(document.getElementById('droneVol').value)
+  const buf = c.createBuffer(1, c.sampleRate * 2, c.sampleRate)
+  const d = buf.getChannelData(0)
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1
+  const src = c.createBufferSource()
+  src.buffer = buf
+  src.loop = true
+  const filter = c.createBiquadFilter()
+  filter.type = 'lowpass'
+  filter.frequency.value = 80
+  filter.Q.value = 0.3
+  const gain = c.createGain()
+  gain.gain.setValueAtTime(0, c.currentTime)
+  gain.gain.linearRampToValueAtTime(vol, c.currentTime + 0.1)
+  src.connect(filter)
+  filter.connect(gain)
+  gain.connect(c.destination)
+  src.start()
+  droneNodes = [src, gain]
+  log(`Noise rumble drone: lowpass 80Hz, vol=${vol} (hold to hear)`)
+}
+
+function startDualDrone() {
+  stopDrone()
+  const c = getCtx()
+  const vol = parseFloat(document.getElementById('droneVol').value)
+
+  // Noise layer
+  const buf = c.createBuffer(1, c.sampleRate * 2, c.sampleRate)
+  const d = buf.getChannelData(0)
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1
+  const src = c.createBufferSource()
+  src.buffer = buf
+  src.loop = true
+  const filter = c.createBiquadFilter()
+  filter.type = 'lowpass'
+  filter.frequency.value = 60
+  filter.Q.value = 0.3
+  const g1 = c.createGain()
+  g1.gain.setValueAtTime(0, c.currentTime)
+  g1.gain.linearRampToValueAtTime(vol, c.currentTime + 0.15)
+  src.connect(filter)
+  filter.connect(g1)
+  g1.connect(c.destination)
+  src.start()
+
+  // Sub hum
+  const osc = c.createOscillator()
+  osc.type = 'sine'
+  osc.frequency.value = 35
+  const g2 = c.createGain()
+  g2.gain.setValueAtTime(0, c.currentTime)
+  g2.gain.linearRampToValueAtTime(vol * 0.6, c.currentTime + 0.15)
+  osc.connect(g2)
+  g2.connect(c.destination)
+  osc.start()
+
+  droneNodes = [src, g1, osc, g2]
+  log(`Dual drone: noise lowpass 60Hz + sine 35Hz (hold to hear)`)
+}
+
+function stopDrone() {
+  droneNodes.forEach(n => {
+    if (n instanceof GainNode) {
+      n.gain.setTargetAtTime(0, getCtx().currentTime, 0.05)
+    } else {
+      try { setTimeout(() => n.stop(), 100) } catch {}
+    }
+  })
+  droneNodes = []
+}
+
+// ---- PRESETS ----
+function presetNavConfirm() {
+  const c = getCtx()
+  const osc = c.createOscillator()
+  const gain = c.createGain()
+  osc.type = 'sine'
+  osc.frequency.setValueAtTime(350, c.currentTime)
+  osc.frequency.exponentialRampToValueAtTime(500, c.currentTime + 0.12)
+  gain.gain.setValueAtTime(0.2, c.currentTime)
+  gain.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.18)
+  osc.connect(gain)
+  gain.connect(c.destination)
+  osc.start()
+  osc.stop(c.currentTime + 0.2)
+  log('Preset: Nav confirm (gentle rising sine)')
+}
+
+function presetDataLoaded() {
+  const c = getCtx()
+  ;[600, 800].forEach((f, i) => {
+    const osc = c.createOscillator()
+    const gain = c.createGain()
+    osc.type = 'triangle'
+    osc.frequency.value = f
+    const t = c.currentTime + i * 0.1
+    gain.gain.setValueAtTime(0.15, t)
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15)
+    osc.connect(gain)
+    gain.connect(c.destination)
+    osc.start(t)
+    osc.stop(t + 0.2)
+  })
+  log('Preset: Data loaded (two-note triangle ding)')
+}
+
+function presetToggle() {
+  const c = getCtx()
+  const osc = c.createOscillator()
+  const gain = c.createGain()
+  osc.type = 'triangle'
+  osc.frequency.setValueAtTime(1000, c.currentTime)
+  osc.frequency.exponentialRampToValueAtTime(700, c.currentTime + 0.08)
+  gain.gain.setValueAtTime(0.15, c.currentTime)
+  gain.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.12)
+  osc.connect(gain)
+  gain.connect(c.destination)
+  osc.start()
+  osc.stop(c.currentTime + 0.15)
+  log('Preset: Toggle (quick descending triangle)')
+}
+
+function presetError() {
+  const c = getCtx()
+  ;[0, 0.12].forEach(delay => {
+    const osc = c.createOscillator()
+    const gain = c.createGain()
+    osc.type = 'sine'
+    osc.frequency.value = 250
+    const t = c.currentTime + delay
+    gain.gain.setValueAtTime(0.2, t)
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.1)
+    osc.connect(gain)
+    gain.connect(c.destination)
+    osc.start(t)
+    osc.stop(t + 0.12)
+  })
+  log('Preset: Error (double low tone)')
+}
+
+function presetSuccess() {
+  const c = getCtx()
+  ;[440, 554, 659].forEach((f, i) => {
+    const osc = c.createOscillator()
+    const gain = c.createGain()
+    osc.type = 'sine'
+    osc.frequency.value = f
+    const t = c.currentTime + i * 0.06
+    gain.gain.setValueAtTime(0, t)
+    gain.gain.setValueAtTime(0.15, t + 0.005)
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2)
+    osc.connect(gain)
+    gain.connect(c.destination)
+    osc.start(t)
+    osc.stop(t + 0.25)
+  })
+  log('Preset: Success (rising major triad A-C#-E)')
+}
+
+function presetZoomIn() {
+  const c = getCtx()
+  const osc = c.createOscillator()
+  const gain = c.createGain()
+  osc.type = 'sine'
+  osc.frequency.setValueAtTime(200, c.currentTime)
+  osc.frequency.exponentialRampToValueAtTime(600, c.currentTime + 0.3)
+  gain.gain.setValueAtTime(0.15, c.currentTime)
+  gain.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.35)
+  osc.connect(gain)
+  gain.connect(c.destination)
+  osc.start()
+  osc.stop(c.currentTime + 0.4)
+  log('Preset: Zoom in (rising sine)')
+}
+
+function presetZoomOut() {
+  const c = getCtx()
+  const osc = c.createOscillator()
+  const gain = c.createGain()
+  osc.type = 'sine'
+  osc.frequency.setValueAtTime(600, c.currentTime)
+  osc.frequency.exponentialRampToValueAtTime(200, c.currentTime + 0.3)
+  gain.gain.setValueAtTime(0.15, c.currentTime)
+  gain.gain.exponentialRampToValueAtTime(0.001, c.currentTime + 0.35)
+  osc.connect(gain)
+  gain.connect(c.destination)
+  osc.start()
+  osc.stop(c.currentTime + 0.4)
+  log('Preset: Zoom out (falling sine)')
+}
+
+function presetLayerSwitch() {
+  const c = getCtx()
+  const dur = 0.25
+  ;[500, 700, 500].forEach((f, i) => {
+    const osc = c.createOscillator()
+    const gain = c.createGain()
+    osc.type = 'triangle'
+    osc.frequency.value = f
+    const t = c.currentTime + i * 0.06
+    gain.gain.setValueAtTime(0.12, t)
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.1)
+    osc.connect(gain)
+    gain.connect(c.destination)
+    osc.start(t)
+    osc.stop(t + 0.12)
+  })
+  log('Preset: Layer switch (triangle triplet)')
+}
+</script>
+</body>
+</html>
