@@ -196,6 +196,7 @@ Rules:
 - You MUST use one of the exact command IDs listed above. Do NOT invent command IDs.
 - For relative adjustments (e.g. "go up 10m"), use the current altitude from state and compute the target. Example: current altitude 500m + "go up 10m" = {"command":"core:zoom-to","params":{"altitude":0.51}}
 - For compound requests like "go to X and show Y", always return {"command":"chat"}
+- For place names, include descriptive context that helps disambiguation. Example: "take a close look at the big ben clock" should use place "Big Ben, London" (not just "Big Ben"). Add city/country/context when the user's wording implies a specific well-known place.
 - Respond ONLY with valid JSON, no other text.`
 
   try {

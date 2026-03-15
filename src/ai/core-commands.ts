@@ -62,29 +62,62 @@ const goTo: CommandEntry = {
 
       console.log('[go-to] Location not in lookup table, trying geocoder...')
       // Fallback: OpenStreetMap Nominatim geocoder (free, no key needed)
-      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(place)}&format=json&limit=1`
+      // Request multiple results so we can pick the best one (not just the first)
+      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(place)}&format=json&limit=5&addressdetails=1`
       const resp = await fetch(url, {
         headers: { 'User-Agent': 'EarthExplorer/1.0' },
       })
       const data = await resp.json()
       if (data && data.length > 0) {
-        const lat = parseFloat(data[0].lat)
-        const lon = parseFloat(data[0].lon)
-        const type = data[0].type || ''
+        // Rank results: prefer landmarks, buildings, and populated places over
+        // natural features like peaks or ridges. This avoids "Big Ben" resolving
+        // to an Australian mountain instead of the London clock tower.
+        const preferredTypes = [
+          'attraction', 'tourism', 'monument', 'memorial', 'tower', 'clock',
+          'building', 'house', 'place_of_worship', 'castle', 'museum',
+          'city', 'town', 'village', 'suburb', 'neighbourhood',
+          'administrative', 'county', 'region', 'country', 'state', 'continent',
+        ]
+        const ranked = [...data].sort((a, b) => {
+          const typeA = a.type || ''
+          const typeB = b.type || ''
+          const classA = a.class || ''
+          const classB = b.class || ''
+          // Strongly prefer tourism/historic/building classes
+          const boostClasses = ['tourism', 'historic', 'building', 'amenity', 'place']
+          const boostA = boostClasses.includes(classA) ? -100 : 0
+          const boostB = boostClasses.includes(classB) ? -100 : 0
+          const idxA = preferredTypes.indexOf(typeA)
+          const idxB = preferredTypes.indexOf(typeB)
+          const scoreA = (idxA >= 0 ? idxA : 50) + boostA
+          const scoreB = (idxB >= 0 ? idxB : 50) + boostB
+          return scoreA - scoreB
+        })
+
+        const best = ranked[0]
+        const lat = parseFloat(best.lat)
+        const lon = parseFloat(best.lon)
+        const type = best.type || ''
+        const cls = best.class || ''
         let height = 50_000
         if (['continent'].includes(type)) height = 5_000_000
         else if (['country', 'state'].includes(type)) height = 500_000
         else if (['county', 'region'].includes(type)) height = 200_000
         else if (['city', 'town', 'village'].includes(type)) height = 30_000
         else if (['suburb', 'neighbourhood'].includes(type)) height = 5_000
-        else if (['building', 'house'].includes(type)) height = 1_000
+        else if (['building', 'house', 'attraction', 'tower', 'monument', 'clock'].includes(type)
+                 || ['tourism', 'historic', 'building'].includes(cls)) height = 1_000
 
-        console.log(`[go-to] Geocoder found: ${data[0].display_name} (${lat}, ${lon}, type: ${type})`)
+        if (data.length > 1) {
+          console.log(`[go-to] Geocoder returned ${data.length} results, ranked best: ${best.display_name} (class: ${cls}, type: ${type})`)
+          console.log(`[go-to] Other candidates:`, data.slice(0, 4).map((d: any) => `${d.display_name} (${d.class}/${d.type})`))
+        }
+        console.log(`[go-to] Geocoder found: ${best.display_name} (${lat}, ${lon}, type: ${type})`)
         viewer.camera.flyTo({
           destination: Cesium.Cartesian3.fromDegrees(lon, lat, height),
           duration: 2.0,
         })
-        return `Flying to ${data[0].display_name}`
+        return `Flying to ${best.display_name}`
       } else {
         return `Could not find location: ${place}`
       }
