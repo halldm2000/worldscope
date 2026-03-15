@@ -113,7 +113,7 @@ export interface CommandEntry {
 
 // --- Router types ---
 
-export type RoutingTier = 'pattern' | 'classify' | 'local-chat' | 'cloud-chat'
+export type RoutingTier = 'pattern' | 'ai-classify' | 'classify' | 'local-chat' | 'cloud-chat'
 
 export interface RouteResult {
   tier: RoutingTier

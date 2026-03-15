@@ -1,9 +1,14 @@
 /**
  * Intent Router
  *
- * Processes user input through a tiered priority chain:
- *   Tier 0: Pattern matching against registry (instant, <1ms)
- *   Tier 3: AI provider with tool use (500ms+, multi-step capable)
+ * Three-tier routing strategy:
+ *   1. AI classifier (fast, non-streaming): classifies intent and extracts
+ *      params for single-command inputs. Executes the command directly
+ *      without a full chat round-trip. (~300ms, minimal tokens)
+ *   2. AI chat with tool use (streaming): handles conversations, questions,
+ *      compound commands, and anything the classifier defers. (~500ms+)
+ *   3. Pattern matching fallback: only used when no AI provider is available.
+ *      Regex-based, no intelligence, but keeps basic commands working offline.
  *
  * The router owns the tool execution loop: it auto-generates tool
  * definitions from the command registry, sends them to the AI provider,
@@ -48,7 +53,8 @@ export function removeSystemContext(fragment: string): void {
 
 /**
  * Route user input through the tier chain.
- * Returns a RouteResult with either a matched command or a streamed AI response.
+ *
+ * Priority: AI classifier -> AI chat -> pattern fallback
  */
 export async function route(input: string, history?: ChatMessage[]): Promise<RouteResult> {
   const trimmed = input.trim()
@@ -56,22 +62,63 @@ export async function route(input: string, history?: ChatMessage[]): Promise<Rou
     return { tier: 'pattern', params: {} }
   }
 
-  // --- Tier 0: Pattern matching (high-confidence only) ---
-  // Only fires for near-exact matches (score >= 0.95). Anything ambiguous,
-  // compound, or conversational falls through to the AI for proper handling.
-  // This keeps simple commands instant and free while the AI handles the rest.
-  const PATTERN_THRESHOLD = 0.95
+  const provider = await findProvider()
+
+  if (provider) {
+    // --- Tier 1: AI intent classifier (fast, non-streaming) ---
+    // A lightweight prompt asks the AI to classify the input as either a
+    // single command (returns command ID + params as JSON) or "chat" (needs
+    // the full conversational path). This replaces brittle regex matching
+    // with actual language understanding, at minimal token cost.
+    const classified = await classifyIntent(provider, trimmed)
+
+    if (classified) {
+      console.log(`[router] AI classified: ${classified.commandId}`, classified.params)
+      const command = registry.get(classified.commandId)
+      if (command) {
+        try {
+          const result = await command.handler(classified.params)
+          // Check for text output (e.g. help, list)
+          const output = (command as any)._lastOutput as string | undefined
+          if (output) {
+            delete (command as any)._lastOutput
+            return {
+              tier: 'ai-classify',
+              command,
+              params: classified.params,
+              response: (async function* () { yield output })(),
+            }
+          }
+          return {
+            tier: 'ai-classify',
+            command,
+            params: classified.params,
+          }
+        } catch (err) {
+          console.error('[router] Command handler error:', err)
+        }
+      }
+    }
+
+    // --- Tier 2: AI chat with tool use (full conversation) ---
+    // Classifier returned null (meaning "chat"), or the command wasn't found.
+    // Fall through to the streaming chat path with tool use.
+    const response = runAIWithTools(provider, trimmed, history)
+    return { tier: 'cloud-chat', response }
+  }
+
+  // --- Tier 3: Pattern matching fallback (offline only) ---
+  // No AI provider available. Fall back to regex pattern matching so basic
+  // commands still work without an API key or network connection.
   const patternMatch = matchPattern(trimmed, registry.getAll())
-  const isCompound = patternMatch && looksCompound(patternMatch.params)
-  if (patternMatch && patternMatch.score >= PATTERN_THRESHOLD && !isCompound) {
-    console.log(`[router] Tier 0 match: ${patternMatch.command.id} (score: ${patternMatch.score.toFixed(3)})`, patternMatch.params)
+  if (patternMatch && patternMatch.score >= 0.85) {
+    console.log(`[router] Offline fallback match: ${patternMatch.command.id} (score: ${patternMatch.score.toFixed(3)})`)
     try {
       await patternMatch.command.handler(patternMatch.params)
     } catch (err) {
       console.error('[router] Command handler error:', err)
     }
 
-    // Check if command produced output (e.g. help, list)
     const output = (patternMatch.command as any)._lastOutput as string | undefined
     if (output) {
       delete (patternMatch.command as any)._lastOutput
@@ -90,14 +137,7 @@ export async function route(input: string, history?: ChatMessage[]): Promise<Rou
     }
   }
 
-  // --- Tier 3: AI with tool use ---
-  const provider = await findProvider()
-  if (provider) {
-    const response = runAIWithTools(provider, trimmed, history)
-    return { tier: 'cloud-chat', response }
-  }
-
-  // No provider available
+  // No provider, no pattern match
   return {
     tier: 'pattern',
     response: (async function* () {
@@ -106,7 +146,85 @@ export async function route(input: string, history?: ChatMessage[]): Promise<Rou
   }
 }
 
-// ── AI tool use loop ──
+// ── Tier 1: AI intent classifier ──
+
+interface ClassifiedIntent {
+  commandId: string
+  params: Record<string, unknown>
+}
+
+/**
+ * Lightweight AI call to classify user input as a single command or "chat".
+ * Returns null if the input needs the full conversational path.
+ *
+ * Uses a non-streaming request with a tiny prompt and max_tokens=150.
+ * Typical latency: 200-400ms, ~200 input tokens + ~50 output tokens.
+ */
+async function classifyIntent(
+  provider: AIProvider,
+  input: string,
+): Promise<ClassifiedIntent | null> {
+  const commands = registry.getAll().filter(c => !c.aiHidden)
+  const commandSummary = commands.map(c => {
+    const params = c.params
+      .filter(p => p.name !== '_raw')
+      .map(p => `${p.name}:${p.type}${p.required ? '' : '?'}`)
+      .join(', ')
+    return `  ${c.id}(${params}) - ${c.description}`
+  }).join('\n')
+
+  const classifierPrompt = `You are a command classifier for a 3D globe app. Given user input, determine if it maps to exactly ONE command, or if it needs a conversational response.
+
+Available commands (use these EXACT IDs only):
+${commandSummary}
+
+Rules:
+- If the input maps to exactly one command, respond with JSON: {"command":"<exact-id>","params":{...}}
+- If it's a question, conversation, compound request (multiple actions), or ambiguous, respond with: {"command":"chat"}
+- You MUST use one of the exact command IDs listed above. Do NOT invent command IDs.
+- For compound requests like "go to X and show Y", always return {"command":"chat"}
+- Respond ONLY with valid JSON, no other text.`
+
+  try {
+    // Collect the full response (non-streaming, small output)
+    let responseText = ''
+    const messages: ChatMessage[] = [{ role: 'user', content: input }]
+    const stream = provider.chat(messages, undefined, {
+      systemPrompt: classifierPrompt,
+      maxTokens: 150,
+      temperature: 0,
+    })
+
+    for await (const event of stream) {
+      if (event.type === 'text') responseText += event.content
+      if (event.type === 'error') {
+        console.warn('[router] Classifier error, falling through to chat:', event.message)
+        return null
+      }
+    }
+
+    // Parse the JSON response
+    const cleaned = responseText.trim().replace(/^```json?\s*/, '').replace(/\s*```$/, '')
+    const parsed = JSON.parse(cleaned)
+
+    if (parsed.command === 'chat' || !parsed.command) {
+      console.log('[router] Classifier says: chat')
+      return null
+    }
+
+    console.log(`[router] Classifier says: ${parsed.command}`, parsed.params)
+    return {
+      commandId: parsed.command,
+      params: { ...parsed.params, _raw: input },
+    }
+  } catch (err) {
+    // If classification fails for any reason, fall through to chat
+    console.warn('[router] Classifier failed, falling through to chat:', err)
+    return null
+  }
+}
+
+// ── Tier 2: AI chat with tool use ──
 
 /**
  * Run the full AI conversation with tool execution loop.
@@ -258,18 +376,7 @@ function paramToJsonSchema(param: CommandParam): { type: string; description?: s
 
 import type { CommandParam } from './types'
 
-// ── Compound request detection ──
-
-/** Check if extracted params contain signs of a multi-action request. */
-function looksCompound(params: Record<string, unknown>): boolean {
-  const actionVerbs = /\b(and|then|also|plus)\b\s+(show|hide|toggle|turn|switch|go|fly|zoom|set|reset|change|enable|disable)\b/i
-  for (const val of Object.values(params)) {
-    if (typeof val === 'string' && actionVerbs.test(val)) return true
-  }
-  return false
-}
-
-// ── Tier 0: Pattern matching ──
+// ── Tier 3: Pattern matching (offline fallback) ──
 
 interface PatternMatch {
   command: CommandEntry
@@ -371,8 +478,8 @@ ${commandList}
 Your role:
 - Answer questions about geography, Earth science, meteorology, climate, remote sensing, and related topics
 - Use tools to take actions on the globe (navigate, toggle layers, switch maps) when the user's intent implies it
-- After using tools, briefly describe what you did and any interesting context about what's now visible
-- Keep responses concise (2-4 sentences) unless the user asks for depth
+- After using tools, confirm what you did in ONE short sentence. Only add a second sentence if there's something genuinely surprising or useful about the location/data. Do NOT narrate geography facts the user didn't ask about.
+- Keep responses concise (1-2 sentences for tool actions, 2-4 for questions) unless the user asks for depth
 - You are knowledgeable about NVIDIA Earth-2, weather/climate AI models, and scientific computing
 - Use commas or parentheses instead of em dashes
 - Be direct and informative, not chatty

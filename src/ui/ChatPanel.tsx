@@ -89,8 +89,29 @@ export function ChatPanel() {
     // Add user message
     addMessage({ role: 'user', content: text })
 
-    // Build history for context
-    const history = messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }))
+    // Build history for context.
+    // Classifier-handled commands (tagged with `command`) are rewritten so the AI
+    // knows what happened but doesn't re-execute them. e.g.:
+    //   user: "zoom to 500km" + assistant: "Zoom to altitude" (command: core:zoom-to)
+    //   becomes -> assistant: "[Already executed: Zoom to altitude]"
+    // This gives the AI full conversational context without triggering duplicate actions.
+    const history: { role: 'user' | 'assistant'; content: string }[] = []
+    for (const m of messages) {
+      if (m.role === 'assistant' && m.command) {
+        // Collapse the user+assistant pair into a single context note
+        history.push({ role: 'assistant', content: `[Already executed: ${m.content}]` })
+      } else if (m.role === 'user' || m.role === 'assistant') {
+        // Check if the NEXT message is a classifier confirmation for this user msg
+        // If so, rewrite the user msg to indicate it was handled
+        const idx = messages.indexOf(m)
+        const next = messages[idx + 1]
+        if (m.role === 'user' && next?.role === 'assistant' && next.command) {
+          // Skip this user message; the assistant note covers it
+          continue
+        }
+        history.push({ role: m.role, content: m.content })
+      }
+    }
 
     // Route through AI system
     let result
@@ -104,7 +125,7 @@ export function ChatPanel() {
     }
 
     if (result.command && !result.response) {
-      // Command was executed, show confirmation
+      // Command was executed (by classifier), show confirmation
       const confirmation = `${result.command.name}`
 
       // Play appropriate sound based on command category
@@ -117,7 +138,8 @@ export function ChatPanel() {
       if (panelState === 'minimized') {
         setStatusText(confirmation)
       } else {
-        addMessage({ role: 'assistant', content: confirmation })
+        // Tag the confirmation so it's excluded from chat history
+        addMessage({ role: 'assistant', content: confirmation, command: result.command.id })
       }
     }
 

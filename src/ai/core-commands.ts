@@ -129,7 +129,7 @@ const zoomIn: CommandEntry = {
   params: [],
   handler: () => {
     const viewer = getViewer()
-    if (!viewer) return
+    if (!viewer) return 'No viewer available'
     playRumble()
     const pos = viewer.camera.positionCartographic
     const newHeight = Math.max(pos.height * 0.4, 100) // don't go below 100m
@@ -142,6 +142,7 @@ const zoomIn: CommandEntry = {
       },
       duration: 1.5,
     })
+    return `Zooming in to ${Math.round(newHeight / 1000)} km`
   },
 }
 
@@ -155,7 +156,7 @@ const zoomOut: CommandEntry = {
   params: [],
   handler: () => {
     const viewer = getViewer()
-    if (!viewer) return
+    if (!viewer) return 'No viewer available'
     playRumble()
     const pos = viewer.camera.positionCartographic
     const newHeight = Math.min(pos.height * 2.5, 25_000_000) // max 25,000 km
@@ -168,6 +169,38 @@ const zoomOut: CommandEntry = {
       },
       duration: 1.5,
     })
+    return `Zooming out to ${Math.round(newHeight / 1000)} km`
+  },
+}
+
+const zoomTo: CommandEntry = {
+  id: 'core:zoom-to',
+  name: 'Zoom to altitude',
+  module: 'core',
+  category: 'navigation',
+  description: 'Set the camera to a specific altitude in kilometers (e.g. zoom to 500km, zoom to 10000km)',
+  patterns: ['zoom to {altitude}', 'altitude {altitude}'],
+  params: [
+    { name: 'altitude', type: 'number', required: true, description: 'Target altitude in kilometers' },
+  ],
+  handler: (params) => {
+    const viewer = getViewer()
+    if (!viewer) return 'No viewer available'
+    const altKm = typeof params.altitude === 'number' ? params.altitude : parseFloat(String(params.altitude))
+    if (isNaN(altKm) || altKm <= 0) return 'Invalid altitude'
+    playRumble()
+    const pos = viewer.camera.positionCartographic
+    const altMeters = Math.min(Math.max(altKm * 1000, 100), 25_000_000)
+    viewer.camera.flyTo({
+      destination: Cesium.Cartesian3.fromRadians(pos.longitude, pos.latitude, altMeters),
+      orientation: {
+        heading: viewer.camera.heading,
+        pitch: viewer.camera.pitch,
+        roll: 0,
+      },
+      duration: 1.5,
+    })
+    return `Zooming to ${altKm} km altitude`
   },
 }
 
@@ -574,7 +607,7 @@ const listBaseMaps: CommandEntry = {
 
 /** All core commands */
 export const coreCommands: CommandEntry[] = [
-  goTo, resetView, zoomIn, zoomOut, faceNorth,
+  goTo, resetView, zoomIn, zoomOut, zoomTo, faceNorth,
   toggleBuildings, toggleTerrain, toggleLighting, setTimeOfDay,
   baseMap, listBaseMaps,
   muteToggle, whatCanYouDo, fullscreen, setProvider, setCesiumToken,
