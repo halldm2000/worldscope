@@ -58,17 +58,23 @@ export function setAutoSwitch(enabled: boolean): void {
   _autoSwitch = enabled
 }
 
+/** Base maps where photorealistic buildings make visual sense */
+const PHOTO_COMPATIBLE_MAPS: Set<BaseMapStyle> = new Set(['default', 'satellite'])
+
 /**
  * Called every frame from the postRender callback.
  * Automatically switches building mode based on camera altitude with hysteresis.
+ * Photorealistic buildings only activate on satellite-family base maps.
  */
 export function updateBuildingMode(altitude: number): void {
   if (!_autoSwitch) return
   if (!_photoTileset) return // photorealistic not available
 
-  if (_buildingMode === 'osm' && altitude < SWITCH_DOWN) {
+  const photoAllowed = PHOTO_COMPATIBLE_MAPS.has(_currentBaseMap)
+
+  if (photoAllowed && _buildingMode === 'osm' && altitude < SWITCH_DOWN) {
     setBuildingMode('photorealistic')
-  } else if (_buildingMode === 'photorealistic' && altitude > SWITCH_UP) {
+  } else if (_buildingMode === 'photorealistic' && (altitude > SWITCH_UP || !photoAllowed)) {
     setBuildingMode('osm')
   }
 }
@@ -151,6 +157,12 @@ export async function setBaseMapStyle(style: BaseMapStyle): Promise<boolean> {
   }
   layers.addImageryProvider(provider, 0)
   _currentBaseMap = style
+
+  // Force OSM buildings if new base map isn't compatible with photorealistic
+  if (_buildingMode === 'photorealistic' && !PHOTO_COMPATIBLE_MAPS.has(style)) {
+    setBuildingMode('osm')
+  }
+
   console.log(`[engine] Base map: ${def.name}`)
   return true
 }
