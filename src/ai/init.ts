@@ -1,16 +1,16 @@
 /**
  * AI system initialization.
- * Registers core commands and sets up providers.
+ * Registers core commands, feature modules, and AI providers.
  */
 
 import { registry } from './registry'
 import { registerProvider, removeProvider } from './router'
 import { coreCommands } from './core-commands'
 import { ClaudeProvider } from './providers/claude'
+import { OpenAIProvider, createOpenAIProvider, createOllamaProvider, createOpenRouterProvider } from './providers/openai'
 import { initLayers } from '@/features/layers'
 
 let commandsRegistered = false
-let claudeAdded = false
 
 export function initAI(options?: { anthropicKey?: string | null }): void {
   // Register core commands once
@@ -22,24 +22,51 @@ export function initAI(options?: { anthropicKey?: string | null }): void {
     initLayers()
   }
 
-  // Add Claude provider if key is available and we haven't already
-  if (options?.anthropicKey && !claudeAdded) {
-    registerProvider(new ClaudeProvider(options.anthropicKey))
-    claudeAdded = true
-    console.log(`[AI] Initialized with ${registry.getAll().length} commands, Claude provider active`)
-  } else if (!claudeAdded) {
-    console.log(`[AI] Initialized with ${registry.getAll().length} commands, no cloud provider`)
+  // Auto-add provider from env / stored key
+  if (options?.anthropicKey) {
+    addProvider('anthropic', options.anthropicKey)
   }
+
+  console.log(`[AI] Initialized with ${registry.getAll().length} commands`)
 }
 
 /**
- * Hot-add a Claude provider (e.g. after user enters API key via command).
+ * Add or replace an AI provider by type.
+ * Called from the "set provider" command or at init time.
  */
-export function addClaudeProvider(apiKey: string): void {
-  if (claudeAdded) {
-    removeProvider('claude')
+export function addProvider(
+  type: 'anthropic' | 'openai' | 'ollama' | 'openrouter' | 'custom',
+  apiKey: string,
+  options?: { model?: string; baseUrl?: string },
+): void {
+  let provider
+
+  switch (type) {
+    case 'anthropic':
+      provider = new ClaudeProvider(apiKey)
+      break
+    case 'openai':
+      provider = createOpenAIProvider(apiKey, options?.model)
+      break
+    case 'ollama':
+      provider = createOllamaProvider(options?.model, options?.baseUrl)
+      break
+    case 'openrouter':
+      provider = createOpenRouterProvider(apiKey, options?.model)
+      break
+    case 'custom':
+      provider = new OpenAIProvider({
+        name: 'custom',
+        baseUrl: options?.baseUrl || 'http://localhost:8000/v1',
+        apiKey,
+        defaultModel: options?.model || 'default',
+      })
+      break
   }
-  registerProvider(new ClaudeProvider(apiKey))
-  claudeAdded = true
-  console.log('[AI] Claude provider added')
+
+  registerProvider(provider)
+  console.log(`[AI] Provider added: ${provider.name}`)
 }
+
+// Re-export for use by the set-provider command
+export { removeProvider }

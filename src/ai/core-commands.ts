@@ -361,33 +361,94 @@ const fullscreen: CommandEntry = {
   },
 }
 
-const setApiKey: CommandEntry = {
-  id: 'core:set-key',
-  name: 'Set API key',
+const setProvider: CommandEntry = {
+  id: 'core:set-provider',
+  name: 'Set AI provider',
   module: 'core',
   category: 'system',
-  description: 'Set an API key (anthropic or cesium)',
+  description: 'Configure an AI provider (anthropic, openai, ollama, openrouter)',
+  aiHidden: true,
   patterns: [
-    'set key {key}', 'set api key {key}', 'anthropic key {key}',
-    'set cesium token {key}', 'cesium token {key}',
+    'set provider {provider} {key}',
+    'set provider {provider}',
+    'set key {key}',
+    'set api key {key}',
+    'use {provider} {key}',
+    'use {provider}',
   ],
-  params: [{ name: 'key', type: 'string', required: true, description: 'API key or token' }],
-  handler: (params) => {
-    const key = String(params.key).trim()
-    if (key.startsWith('sk-')) {
-      // Anthropic key
-      localStorage.setItem('ee-anthropic-key', key)
-      const { addClaudeProvider } = require('./init')
-      addClaudeProvider(key)
-      console.log('[set-key] Anthropic API key set')
-    } else if (key.startsWith('eyJ')) {
-      // Cesium Ion token (JWT)
-      const { useStore } = require('@/store')
-      useStore.getState().setCesiumToken(key)
-      console.log('[set-key] Cesium Ion token set (reload to apply)')
-    } else {
-      console.warn('[set-key] Unrecognized key format. Anthropic keys start with sk-, Cesium tokens start with eyJ')
+  params: [
+    { name: 'provider', type: 'string', required: false, description: 'Provider name' },
+    { name: 'key', type: 'string', required: false, description: 'API key' },
+  ],
+  handler: async (params) => {
+    const raw = String(params._raw ?? '').trim()
+    let providerName = String(params.provider ?? '').toLowerCase().trim()
+    let key = String(params.key ?? '').trim()
+
+    // Handle "set key sk-ant-..." shorthand (auto-detect provider from key prefix)
+    if (!providerName || providerName === 'undefined') {
+      // The "key" might be in providerName position
+      const possibleKey = providerName
+      if (key.startsWith('sk-ant-') || possibleKey.startsWith('sk-ant-')) {
+        providerName = 'anthropic'
+        key = key || possibleKey
+      } else if (key.startsWith('sk-') || possibleKey.startsWith('sk-')) {
+        providerName = 'openai'
+        key = key || possibleKey
+      } else if (key.startsWith('eyJ') || possibleKey.startsWith('eyJ')) {
+        // Cesium token
+        const { useStore } = await import('@/store')
+        useStore.getState().setCesiumToken(key || possibleKey)
+        console.log('[provider] Cesium Ion token set')
+        return
+      }
     }
+
+    // Auto-detect provider from key if name not given but key is in first param
+    if (providerName && !key) {
+      if (providerName.startsWith('sk-ant-')) { key = providerName; providerName = 'anthropic' }
+      else if (providerName.startsWith('sk-')) { key = providerName; providerName = 'openai' }
+      else if (providerName.startsWith('sk-or-')) { key = providerName; providerName = 'openrouter' }
+    }
+
+    // Normalize provider name
+    if (providerName === 'claude' || providerName === 'anthropic') providerName = 'anthropic'
+    else if (providerName === 'gpt' || providerName === 'chatgpt') providerName = 'openai'
+
+    const validProviders = ['anthropic', 'openai', 'ollama', 'openrouter']
+    if (!validProviders.includes(providerName)) {
+      console.log(`[provider] Unknown provider "${providerName}". Options: ${validProviders.join(', ')}`)
+      return
+    }
+
+    // Ollama doesn't need a key
+    if (providerName === 'ollama') key = ''
+
+    // Persist the key
+    if (key) {
+      localStorage.setItem(`ee-${providerName}-key`, key)
+    }
+
+    const { addProvider } = await import('./init')
+    addProvider(providerName as any, key)
+    console.log(`[provider] ${providerName} provider configured`)
+  },
+}
+
+const setCesiumToken: CommandEntry = {
+  id: 'core:set-cesium-token',
+  name: 'Set Cesium token',
+  module: 'core',
+  category: 'system',
+  description: 'Set a custom Cesium Ion access token',
+  aiHidden: true,
+  patterns: ['set cesium token {key}', 'cesium token {key}'],
+  params: [{ name: 'key', type: 'string', required: true, description: 'Cesium Ion token' }],
+  handler: async (params) => {
+    const key = String(params.key).trim()
+    const { useStore } = await import('@/store')
+    useStore.getState().setCesiumToken(key)
+    console.log('[provider] Cesium Ion token set (reload to apply)')
   },
 }
 
@@ -515,5 +576,5 @@ export const coreCommands: CommandEntry[] = [
   goTo, resetView, zoomIn, zoomOut, faceNorth,
   toggleBuildings, toggleTerrain, toggleLighting, setTimeOfDay,
   baseMap, listBaseMaps,
-  muteToggle, whatCanYouDo, fullscreen, setApiKey,
+  muteToggle, whatCanYouDo, fullscreen, setProvider, setCesiumToken,
 ]

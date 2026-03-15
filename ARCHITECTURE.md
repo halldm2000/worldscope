@@ -160,6 +160,197 @@ Plugins implement `TrackDataSource`: return named tracks (sequences of timestamp
 
 Shared colormap library. Default set covers common scientific needs (viridis, inferno, temperature diverging, precipitation sequential). Plugins can register additional colormaps for domain-specific visualization.
 
+## AI Interface
+
+The conversational interface is the primary way users interact with the globe. It needs to be intelligent (understand intent, take action, explain what it did), multi-provider (not locked to one AI vendor), and tool-capable (the AI can execute commands on the globe, not just talk).
+
+### How it works today
+
+```
+User types "go to Berlin"
+  → Tier 0: Pattern matching (instant, regex against command registry)
+  → Match found → execute handler → done
+
+User types "What causes hurricanes?"
+  → Tier 0: No match
+  → Tier 3: Send to Claude API → stream text response
+  → AI talks but cannot act on the globe
+```
+
+The pattern matcher handles structured commands well, but the AI fallback is just a chat window. It can't fly the camera, toggle layers, load data, or do anything except talk.
+
+### What we're building
+
+A tool-use loop where the AI can call any registered command, observe the result, call more commands, and then summarize what it did in natural language. The key insight: the command registry already defines every action the app can take, complete with parameter schemas. Those are the tools.
+
+```
+User: "Show me earthquake activity near Japan this week, and switch to dark map"
+  → Tier 0: No single pattern match
+  → Tier 3: Send to AI with tools derived from command registry
+  → AI calls: flyTo({ place: "Japan" })
+  → AI calls: setBaseMap({ style: "dark" })
+  → AI calls: showLayer({ layer: "earthquakes" })
+  → Router executes each tool call, returns results
+  → AI responds: "I've flown to Japan, switched to dark map, and turned on
+    the earthquake layer. You can see several magnitude 4+ events in the
+    past week clustered along the Pacific plate boundary."
+```
+
+### Multi-provider design
+
+The AI system is not tied to one provider. The `AIProvider` interface defines what any provider must support, and the router handles the tool execution loop regardless of which provider generated the tool calls.
+
+**Supported provider types:**
+
+| Provider | API Format | Tool Use | Latency | Cost |
+|----------|-----------|----------|---------|------|
+| Anthropic (Claude) | Messages API | `tool_use` blocks | ~500ms | Per-token |
+| OpenAI (GPT) | Chat Completions | `function_calling` | ~500ms | Per-token |
+| Google (Gemini) | GenerateContent | `functionDeclarations` | ~500ms | Per-token |
+| Ollama (local) | Chat API | `tools` array | ~200ms | Free |
+| OpenRouter | OpenAI-compatible | `function_calling` | Varies | Per-token |
+
+Each provider speaks its own wire format for tool use, but they all follow the same conceptual loop: (1) send messages with tool definitions, (2) model responds with tool calls, (3) execute tools, (4) send results back, (5) model continues.
+
+**The normalized format** lives in the router. Providers translate between the normalized format and their native API:
+
+```typescript
+// What the router sees (provider-agnostic)
+interface ToolCall {
+  id: string
+  name: string                    // maps to command registry ID
+  arguments: Record<string, unknown>
+}
+
+interface ToolResult {
+  id: string
+  content: string                 // what the command returned
+  isError?: boolean
+}
+
+// What each provider implements
+interface AIProvider {
+  name: string
+  available(): Promise<boolean>
+
+  // Chat with tool use. Yields text chunks and tool call requests.
+  chat(
+    messages: ChatMessage[],
+    tools: ToolDef[],
+    options?: ChatOptions,
+  ): AsyncIterable<StreamEvent>
+}
+
+// Stream events (union type)
+type StreamEvent =
+  | { type: 'text'; content: string }
+  | { type: 'tool_call'; call: ToolCall }
+  | { type: 'done' }
+```
+
+### Tool definitions from command registry
+
+The router auto-generates tool definitions from the command registry. Every registered command becomes a tool the AI can call. Plugins that register commands automatically become AI-callable, no extra work needed.
+
+```typescript
+// Command registry entry (already exists)
+{
+  id: 'core:go-to',
+  name: 'Go to location',
+  params: [{ name: 'place', type: 'string', required: true }],
+  handler: (params) => { /* fly camera */ },
+}
+
+// Auto-generated tool definition sent to AI
+{
+  name: 'core:go-to',
+  description: 'Fly the camera to a named location',
+  parameters: {
+    type: 'object',
+    properties: {
+      place: { type: 'string', description: 'Location name' }
+    },
+    required: ['place']
+  }
+}
+```
+
+### The conversation loop
+
+The router manages the full loop. This is provider-agnostic:
+
+```
+1. User sends message
+2. Router builds: system prompt + conversation history + tool definitions
+3. Send to active provider
+4. Provider streams back text chunks and/or tool calls
+5. For each tool call:
+   a. Look up command in registry
+   b. Execute handler with provided arguments
+   c. Capture result (success message, error, or data)
+   d. Add tool result to conversation
+6. If there were tool calls, send updated conversation back to provider
+   (the model needs to see the results to formulate its response)
+7. Repeat 4-6 until the model produces only text (no more tool calls)
+8. Stream final text response to the chat panel
+```
+
+Most interactions complete in one round (user asks, model calls 1-3 tools, responds). Complex multi-step tasks might take 2-3 rounds.
+
+### System prompt design
+
+The system prompt gives the AI its identity, capabilities, and constraints. It's built dynamically from:
+
+- A fixed preamble (role, personality, response style)
+- The current globe state (camera position, active layers, base map)
+- Available tools (auto-generated from command registry)
+- Plugin context (active plugins contribute their own system prompt fragments)
+
+Plugins can register system prompt fragments via the API:
+
+```typescript
+api.ai.addSystemContext(`
+  The StormCast plugin is active. It provides 7-day precipitation
+  forecasts from NVIDIA's StormCast model. The user can ask about
+  weather forecasts for any location.
+`)
+```
+
+This lets the AI know what's possible without hardcoding plugin knowledge into the core.
+
+### Provider configuration
+
+Users configure providers through the chat interface or environment variables:
+
+```
+"set provider openai sk-..."       → OpenAI with API key
+"set provider anthropic sk-ant-..." → Anthropic with API key
+"set provider ollama"               → Local Ollama (no key needed)
+"set provider openrouter sk-or-..." → OpenRouter (multi-model access)
+```
+
+The store persists the active provider and key in localStorage. Multiple providers can be configured simultaneously, with a priority order (local first, then cloud).
+
+### What the AI can do
+
+With tool use, the AI becomes the intelligent glue between all the app's capabilities:
+
+**Navigation + knowledge**: "Take me to the deepest point in the ocean" (flies to Challenger Deep, explains what it is)
+
+**Multi-step workflows**: "Compare the terrain around Mount Everest and K2" (flies to Everest, takes note, flies to K2, provides comparison)
+
+**Data exploration**: "Show me where the strongest earthquakes happened this month" (loads earthquake data, filters by magnitude, flies to the cluster, narrates the pattern)
+
+**Layer composition**: "Set up a view for analyzing tropical storm activity" (switches to dark map, shows coastlines, loads hurricane tracks, zooms to Atlantic basin)
+
+**Plugin interaction**: "Run StormCast for the next 48 hours over Europe and show precipitation" (calls plugin's inference API, loads result as imagery layer, enables time slider)
+
+### What the AI should NOT do
+
+The AI enhances interaction but doesn't replace the command system. Direct commands ("go to Berlin", "dark map", "show borders") still go through Tier 0 pattern matching for instant response. The AI is the fallback for ambiguous, conversational, or multi-step requests.
+
+The AI also shouldn't be a bottleneck. If the user knows what command they want, the pattern matcher fires in <1ms. The AI path adds 500ms+ latency. The tiered system preserves instant feedback for known commands while enabling intelligent behavior for everything else.
+
 ## Build Order
 
 What to build and in what sequence, prioritized by how much downstream work each piece unblocks.
@@ -170,6 +361,12 @@ What to build and in what sequence, prioritized by how much downstream work each
 - [x] Layer system (GeoJSON vectors: borders, coastlines, rivers)
 - [x] Base map switching (satellite, dark, light, road)
 - [x] Plugin API contract (TypeScript interface defined)
+- [x] AI interface architecture designed
+- [ ] **AI tool use: refactor provider interface for streaming tool calls**
+- [ ] **AI tool use: implement tool execution loop in router**
+- [ ] **AI tool use: auto-generate tool defs from command registry**
+- [ ] **OpenAI-compatible provider** (covers OpenAI, Ollama, OpenRouter, any OpenAI-compatible API)
+- [ ] **Provider switching UI** (set provider command, multi-provider store)
 - [ ] Plugin loader (load from URL, validate apiVersion)
 - [ ] Data-only plugin loader (JSON manifest)
 

@@ -1,36 +1,78 @@
 /**
  * Core types for the AI system.
- * Providers, commands, intents, and routing.
+ * Providers, commands, tools, intents, and routing.
  */
 
-// --- Provider types ---
+// --- Chat messages ---
 
 export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant'
+  role: 'system' | 'user' | 'assistant' | 'tool'
   content: string
+  /** For tool result messages: which tool call this is a response to */
+  toolCallId?: string
+  /** For assistant messages that include tool calls */
+  toolCalls?: ToolCall[]
 }
+
+// --- Tool use ---
+
+export interface ToolDef {
+  name: string
+  description: string
+  parameters: {
+    type: 'object'
+    properties: Record<string, {
+      type: string
+      description?: string
+      enum?: string[]
+    }>
+    required?: string[]
+  }
+}
+
+export interface ToolCall {
+  id: string
+  name: string
+  arguments: Record<string, unknown>
+}
+
+export interface ToolResult {
+  id: string
+  content: string
+  isError?: boolean
+}
+
+// --- Stream events (provider-agnostic) ---
+
+export type StreamEvent =
+  | { type: 'text'; content: string }
+  | { type: 'tool_call'; call: ToolCall }
+  | { type: 'done' }
+
+// --- Provider interface ---
 
 export interface ChatOptions {
   model?: string
   temperature?: number
   maxTokens?: number
   systemPrompt?: string
-  /** Additional context docs injected via RAG */
-  context?: string[]
-}
-
-export interface ClassifyResult {
-  intent: string
-  confidence: number
-  params: Record<string, unknown>
 }
 
 export interface AIProvider {
   readonly name: string
-  readonly tier: 'cloud' | 'local' | 'browser'
+
   available(): Promise<boolean>
-  chat(messages: ChatMessage[], options?: ChatOptions): AsyncIterable<string>
-  classify?(text: string, intents: CommandEntry[]): Promise<ClassifyResult | null>
+
+  /**
+   * Chat with optional tool use.
+   * Yields StreamEvents: text chunks interspersed with tool call requests.
+   * The router handles executing tool calls and feeding results back.
+   */
+  chat(
+    messages: ChatMessage[],
+    tools?: ToolDef[],
+    options?: ChatOptions,
+  ): AsyncIterable<StreamEvent>
 }
 
 // --- Command registry types ---
@@ -60,10 +102,12 @@ export interface CommandEntry {
   patterns: string[]
   /** Parameters this command accepts */
   params: CommandParam[]
-  /** The function to execute */
-  handler: (params: Record<string, unknown>) => void | Promise<void>
+  /** The function to execute. Returns an optional string result for the AI. */
+  handler: (params: Record<string, unknown>) => void | string | Promise<void | string>
   /** Optional: command category for grouping in help */
   category?: 'navigation' | 'view' | 'data' | 'audio' | 'system' | 'feature'
+  /** If true, this command is hidden from AI tool generation (e.g. set-key) */
+  aiHidden?: boolean
 }
 
 // --- Router types ---
