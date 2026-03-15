@@ -24,6 +24,7 @@ const queryCamera: CommandEntry = {
   patterns: ['where am i', 'current position', 'what altitude'],
   params: [],
   aiHidden: false,
+  chatOnly: true, // User expects a conversational answer, not raw data
   handler: () => {
     const viewer = getViewer()
     if (!viewer) return 'Viewer not initialized'
@@ -59,6 +60,7 @@ const queryLayers: CommandEntry = {
   patterns: ['list layers', 'what layers', 'which layers are on'],
   params: [],
   aiHidden: false,
+  chatOnly: true,
   handler: () => {
     const layers = getAllLayers()
     if (layers.length === 0) return 'No layers registered.'
@@ -82,6 +84,7 @@ const queryScene: CommandEntry = {
   patterns: ['scene status', 'what is showing'],
   params: [],
   aiHidden: false,
+  chatOnly: true,
   handler: () => {
     const viewer = getViewer()
     if (!viewer) return 'Viewer not initialized'
@@ -162,6 +165,7 @@ const queryPoint: CommandEntry = {
   name: 'Query elevation',
   module: 'query',
   category: 'data',
+  chatOnly: true,
   description: 'Get the terrain elevation at a specific latitude/longitude. Useful for answering "how high is this mountain?" or "what\'s the elevation here?".',
   patterns: ['elevation at {lat} {lon}', 'how high is'],
   params: [
