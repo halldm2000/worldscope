@@ -202,17 +202,36 @@ function Label({ children }: { children: string }) {
 }
 
 // ============================================
-// Keyboard shortcuts (non-movement)
-// Movement is handled by mouse/trackpad via Cesium's ScreenSpaceCameraController.
+// Keyboard: flight controls + shortcuts
+//
+// Arrow keys / WASD = move forward/back/left/right
+// Q / E = move down / up
+// Shift + arrows = look (rotate heading/pitch)
+// R = reset view
+//
+// Movement rate scales with altitude (same as gamepad),
+// so it feels proportional at any height.
 // ============================================
 
 function setupKeyboard(viewer: Cesium.Viewer) {
+  const keysDown = new Set<string>()
+
   document.addEventListener('keydown', (e) => {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-    if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
 
-    // R = reset view
-    if (e.key.toLowerCase() === 'r') {
+    const key = e.key.toLowerCase()
+
+    // Track held keys for continuous movement
+    keysDown.add(key)
+    if (e.shiftKey) keysDown.add('shift')
+
+    // Prevent arrow keys and WASD from scrolling the page
+    if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd', 'q', 'e'].includes(key)) {
+      e.preventDefault()
+    }
+
+    // R = reset view (one-shot, not continuous)
+    if (key === 'r' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
       playRumble()
       viewer.camera.flyTo({
         destination: Cesium.Cartesian3.fromDegrees(HOME.lon, HOME.lat, HOME.height),
@@ -224,6 +243,45 @@ function setupKeyboard(viewer: Cesium.Viewer) {
         duration: 2.0,
       })
     }
+  })
+
+  document.addEventListener('keyup', (e) => {
+    keysDown.delete(e.key.toLowerCase())
+    if (!e.shiftKey) keysDown.delete('shift')
+  })
+
+  // Clear keys on blur (prevents stuck keys when tabbing away)
+  window.addEventListener('blur', () => keysDown.clear())
+
+  // Continuous movement driven by the render clock
+  viewer.clock.onTick.addEventListener(() => {
+    if (keysDown.size === 0) return
+
+    const camera = viewer.camera
+    const height = camera.positionCartographic.height
+    const isShift = keysDown.has('shift')
+
+    // Scale movement to altitude: fast at high altitude, precise at ground level
+    const moveRate = Math.max(height / 30, 0.5) // min 0.5m per tick
+    const lookRate = 0.02
+
+    if (isShift) {
+      // Shift held: arrow keys rotate the camera (look around)
+      if (keysDown.has('arrowleft') || keysDown.has('a'))  camera.lookLeft(lookRate)
+      if (keysDown.has('arrowright') || keysDown.has('d')) camera.lookRight(lookRate)
+      if (keysDown.has('arrowup') || keysDown.has('w'))    camera.lookUp(lookRate)
+      if (keysDown.has('arrowdown') || keysDown.has('s'))  camera.lookDown(lookRate)
+    } else {
+      // No modifier: arrow keys translate the camera (fly around)
+      if (keysDown.has('arrowup') || keysDown.has('w'))    camera.moveForward(moveRate)
+      if (keysDown.has('arrowdown') || keysDown.has('s'))  camera.moveBackward(moveRate)
+      if (keysDown.has('arrowleft') || keysDown.has('a'))  camera.moveLeft(moveRate)
+      if (keysDown.has('arrowright') || keysDown.has('d')) camera.moveRight(moveRate)
+    }
+
+    // Q/E = altitude (always available, regardless of shift)
+    if (keysDown.has('q')) camera.moveDown(moveRate)
+    if (keysDown.has('e')) camera.moveUp(moveRate)
   })
 }
 
