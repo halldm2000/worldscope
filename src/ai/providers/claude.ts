@@ -6,7 +6,7 @@
  * Anthropic's native content_block / tool_use wire format.
  */
 
-import type { AIProvider, ChatMessage, ChatOptions, ToolDef, StreamEvent } from '../types'
+import type { AIProvider, ChatMessage, ChatOptions, ToolDef, StreamEvent, ContentBlock } from '../types'
 import { parseAPIError, parseNetworkError } from '../errors'
 
 export class ClaudeProvider implements AIProvider {
@@ -172,15 +172,21 @@ export class ClaudeProvider implements AIProvider {
       if (msg.role === 'system') continue // system prompt goes in body.system
 
       if (msg.role === 'user') {
-        result.push({ role: 'user', content: msg.content })
+        // Support rich content blocks (text + images)
+        if (Array.isArray(msg.content)) {
+          result.push({ role: 'user', content: this.convertContentBlocks(msg.content) })
+        } else {
+          result.push({ role: 'user', content: msg.content })
+        }
       }
 
       if (msg.role === 'assistant') {
         if (msg.toolCalls && msg.toolCalls.length > 0) {
           // Assistant message with tool calls
           const content: unknown[] = []
-          if (msg.content) {
-            content.push({ type: 'text', text: msg.content })
+          const textContent = typeof msg.content === 'string' ? msg.content : ''
+          if (textContent) {
+            content.push({ type: 'text', text: textContent })
           }
           for (const tc of msg.toolCalls) {
             content.push({
@@ -192,23 +198,48 @@ export class ClaudeProvider implements AIProvider {
           }
           result.push({ role: 'assistant', content })
         } else {
-          result.push({ role: 'assistant', content: msg.content })
+          result.push({ role: 'assistant', content: typeof msg.content === 'string' ? msg.content : '' })
         }
       }
 
       if (msg.role === 'tool') {
-        // Anthropic expects tool results as user messages with tool_result content
+        // Anthropic expects tool results as user messages with tool_result content.
+        // Content can include images (for screenshot tool results).
+        const toolContent = Array.isArray(msg.content)
+          ? this.convertContentBlocks(msg.content)
+          : msg.content
+
         result.push({
           role: 'user',
           content: [{
             type: 'tool_result',
             tool_use_id: msg.toolCallId,
-            content: msg.content,
+            content: toolContent,
           }],
         })
       }
     }
 
     return result
+  }
+
+  /** Convert our ContentBlock[] to Anthropic's content block format. */
+  private convertContentBlocks(blocks: ContentBlock[]): unknown[] {
+    return blocks.map(block => {
+      if (block.type === 'text') {
+        return { type: 'text', text: block.text }
+      }
+      if (block.type === 'image') {
+        return {
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: block.mediaType,
+            data: block.data,
+          },
+        }
+      }
+      return block
+    })
   }
 }

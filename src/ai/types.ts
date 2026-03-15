@@ -5,9 +5,25 @@
 
 // --- Chat messages ---
 
+/** A content block that can be text or an image (for vision). */
+export interface ImageContent {
+  type: 'image'
+  mediaType: 'image/png' | 'image/jpeg' | 'image/webp'
+  /** Base64-encoded image data */
+  data: string
+}
+
+export interface TextContent {
+  type: 'text'
+  text: string
+}
+
+export type ContentBlock = TextContent | ImageContent
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool'
-  content: string
+  /** Simple text content, or rich content blocks (text + images) */
+  content: string | ContentBlock[]
   /** For tool result messages: which tool call this is a response to */
   toolCallId?: string
   /** For assistant messages that include tool calls */
@@ -103,8 +119,8 @@ export interface CommandEntry {
   patterns: string[]
   /** Parameters this command accepts */
   params: CommandParam[]
-  /** The function to execute. Returns an optional string result for the AI. */
-  handler: (params: Record<string, unknown>) => void | string | Promise<void | string>
+  /** The function to execute. Returns an optional string result (or ContentBlock[] for images). */
+  handler: (params: Record<string, unknown>) => void | string | ContentBlock[] | Promise<void | string | ContentBlock[]>
   /** Optional: command category for grouping in help */
   category?: 'navigation' | 'view' | 'data' | 'audio' | 'system' | 'feature'
   /** If true, this command is hidden from AI tool generation (e.g. set-key) */

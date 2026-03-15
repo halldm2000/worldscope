@@ -22,7 +22,7 @@ import { getAllLayers } from '@/features/layers/manager'
 import * as Cesium from 'cesium'
 import type {
   AIProvider, CommandEntry, RouteResult, ChatMessage, ChatOptions,
-  ToolDef, ToolCall, StreamEvent,
+  ToolDef, ToolCall, StreamEvent, ContentBlock,
 } from './types'
 
 /** Active providers, checked in order */
@@ -311,9 +311,12 @@ async function* runAIWithTools(
       yield `\x00TOOL\x00${toolLabel}\n`
 
       const result = await executeToolCall(call)
-      console.log(`[router] Tool ${call.name}: ${result.content}`)
+      const logContent = Array.isArray(result.content)
+        ? `[${result.content.length} blocks: ${result.content.map(b => b.type).join(', ')}]`
+        : result.content
+      console.log(`[router] Tool ${call.name}: ${logContent}`)
 
-      // Add tool result to conversation
+      // Add tool result to conversation (may include images for vision)
       messages.push({
         role: 'tool',
         content: result.content,
@@ -331,8 +334,9 @@ async function* runAIWithTools(
 
 /**
  * Execute a single tool call by looking up the command in the registry.
+ * Returns content as string or ContentBlock[] (for tools that return images).
  */
-async function executeToolCall(call: ToolCall): Promise<{ content: string; isError: boolean }> {
+async function executeToolCall(call: ToolCall): Promise<{ content: string | ContentBlock[]; isError: boolean }> {
   // Tool names replace colons with underscores (API naming rules).
   // Reverse: core_go-to -> core:go-to, layers_toggle -> layers:toggle
   const commandId = call.name.replace(/_/, ':')
@@ -345,6 +349,11 @@ async function executeToolCall(call: ToolCall): Promise<{ content: string; isErr
   try {
     console.log(`[router] Executing: ${command.id}`, JSON.stringify(call.arguments))
     const result = await command.handler(call.arguments)
+    // Handlers can return a string, ContentBlock[] (for images), or void
+    if (Array.isArray(result)) {
+      console.log(`[router] Result: [${result.length} content blocks]`)
+      return { content: result as ContentBlock[], isError: false }
+    }
     const message = typeof result === 'string' ? result : `Executed ${command.name}`
     console.log(`[router] Result: ${message}`)
     return { content: message, isError: false }

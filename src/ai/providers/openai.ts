@@ -232,10 +232,21 @@ export class OpenAIProvider implements AIProvider {
       }
 
       if (msg.role === 'tool') {
+        // OpenAI/Ollama don't support image content in tool results.
+        // Extract text only, skip images.
+        let toolContent: string
+        if (Array.isArray(msg.content)) {
+          toolContent = msg.content
+            .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
+            .map(b => b.text)
+            .join('\n')
+        } else {
+          toolContent = msg.content
+        }
         result.push({
           role: 'tool',
           tool_call_id: msg.toolCallId,
-          content: msg.content,
+          content: toolContent,
         })
       }
     }

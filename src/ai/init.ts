@@ -6,6 +6,7 @@
 import { registry } from './registry'
 import { registerProvider, removeProvider } from './router'
 import { coreCommands } from './core-commands'
+import { queryCommands } from './query-commands'
 import { ClaudeProvider } from './providers/claude'
 import { OpenAIProvider, createOpenAIProvider, createOllamaProvider, createOpenRouterProvider } from './providers/openai'
 import { initLayers } from '@/features/layers'
@@ -16,6 +17,7 @@ export function initAI(options?: { anthropicKey?: string | null }): void {
   // Register core commands once
   if (!commandsRegistered) {
     registry.registerAll(coreCommands)
+    registry.registerAll(queryCommands)
     commandsRegistered = true
 
     // Initialize feature modules
