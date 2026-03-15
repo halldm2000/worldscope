@@ -7,12 +7,13 @@
  *   full - right sidebar with scrolling history
  */
 
-import { useRef, useEffect, useCallback, useMemo } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useStore } from '@/store'
 import { route } from '@/ai/router'
 import { registry } from '@/ai/registry'
 import type { PanelState } from '@/ai/types'
 import { playPing, playSuccess, toggleMute, warmUp } from '@/audio/sounds'
+import { usageTracker, type UsageSnapshot } from '@/ai/usage'
 
 export function ChatPanel() {
   const panelState = useStore(s => s.panelState)
@@ -28,9 +29,17 @@ export function ChatPanel() {
   const isProcessing = useStore(s => s.isProcessing)
   const setIsProcessing = useStore(s => s.setIsProcessing)
 
+  const [usage, setUsage] = useState<UsageSnapshot | null>(null)
+
   const inputRef = useRef<HTMLInputElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const statusTimerRef = useRef<ReturnType<typeof setTimeout>>()
+
+  // Subscribe to usage updates
+  useEffect(() => {
+    setUsage(usageTracker.getSnapshot())
+    return usageTracker.subscribe(setUsage)
+  }, [])
 
   // Auto-scroll when new messages arrive
   useEffect(() => {
@@ -227,6 +236,20 @@ export function ChatPanel() {
               </span>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Usage indicator (peek and full only) */}
+      {panelState !== 'minimized' && usage && usage.sessionRequests > 0 && (
+        <div style={usageBarStyle}>
+          <span title={`Session: ${usage.sessionInputTokens.toLocaleString()} in / ${usage.sessionOutputTokens.toLocaleString()} out tokens\nLifetime: $${usage.lifetimeCost.toFixed(2)} across ${usage.lifetimeRequests} requests`}>
+            ${usage.sessionCost.toFixed(3)} this session ({usage.sessionRequests} req)
+          </span>
+          {usage.lifetimeCost > usage.sessionCost && (
+            <span style={{ opacity: 0.5 }}>
+              {' '}| ${usage.lifetimeCost.toFixed(2)} lifetime
+            </span>
+          )}
         </div>
       )}
 
@@ -499,6 +522,15 @@ const autocompleteItemStyle: React.CSSProperties = {
   color: 'rgba(255,255,255,0.8)',
   cursor: 'pointer',
   borderBottom: '1px solid rgba(255,255,255,0.04)',
+}
+
+const usageBarStyle: React.CSSProperties = {
+  padding: '4px 16px',
+  fontSize: 11,
+  color: 'rgba(255,255,255,0.35)',
+  fontFamily: 'monospace',
+  textAlign: 'right',
+  borderTop: '1px solid rgba(255,255,255,0.04)',
 }
 
 const inputBarStyle: React.CSSProperties = {

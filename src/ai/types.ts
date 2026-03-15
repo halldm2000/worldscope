@@ -60,9 +60,16 @@ export interface ToolResult {
 
 // --- Stream events (provider-agnostic) ---
 
+export interface UsageData {
+  inputTokens: number
+  outputTokens: number
+  model: string
+}
+
 export type StreamEvent =
   | { type: 'text'; content: string }
   | { type: 'tool_call'; call: ToolCall }
+  | { type: 'usage'; usage: UsageData }
   | { type: 'error'; message: string }
   | { type: 'done' }
 

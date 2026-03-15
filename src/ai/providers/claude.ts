@@ -8,6 +8,7 @@
 
 import type { AIProvider, ChatMessage, ChatOptions, ToolDef, StreamEvent, ContentBlock } from '../types'
 import { parseAPIError, parseNetworkError } from '../errors'
+import { usageTracker } from '../usage'
 
 export class ClaudeProvider implements AIProvider {
   readonly name = 'claude'
@@ -93,6 +94,9 @@ export class ClaudeProvider implements AIProvider {
     let currentToolId = ''
     let currentToolName = ''
     let toolInputJson = ''
+    const modelUsed = (options?.model || 'claude-sonnet-4-20250514') as string
+    let inputTokens = 0
+    let outputTokens = 0
 
     while (true) {
       const { done, value } = await reader.read()
@@ -112,6 +116,11 @@ export class ClaudeProvider implements AIProvider {
 
         try {
           const event = JSON.parse(data)
+
+          // Message start: capture input token count
+          if (event.type === 'message_start' && event.message?.usage) {
+            inputTokens = event.message.usage.input_tokens || 0
+          }
 
           // Text content
           if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
@@ -147,8 +156,17 @@ export class ClaudeProvider implements AIProvider {
             toolInputJson = ''
           }
 
-          // Message complete
+          // Message delta: capture output token count
+          if (event.type === 'message_delta' && event.usage) {
+            outputTokens = event.usage.output_tokens || 0
+          }
+
+          // Message complete: record usage
           if (event.type === 'message_stop') {
+            if (inputTokens > 0 || outputTokens > 0) {
+              usageTracker.record({ inputTokens, outputTokens, model: modelUsed })
+              yield { type: 'usage', usage: { inputTokens, outputTokens, model: modelUsed } }
+            }
             yield { type: 'done' }
             return
           }

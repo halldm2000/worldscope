@@ -283,7 +283,7 @@ async function* runAIWithTools(
   }
   messages.push({ role: 'user', content: userInput })
 
-  const MAX_ROUNDS = 8 // safety limit on tool use rounds
+  const MAX_ROUNDS = 15 // safety limit on tool use rounds
   let round = 0
 
   while (round < MAX_ROUNDS) {
