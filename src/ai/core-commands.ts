@@ -645,14 +645,16 @@ const lookAt: CommandEntry = {
   name: 'Look at target',
   module: 'core',
   category: 'navigation',
-  description: 'Position the camera near a target and look at it. Use this for ground-level or eye-level views of landmarks, buildings, and features. The camera is placed at a specified distance and height from the target, aimed toward it. Parameters: lat/lon of the target, distance in meters (how far the camera is from the target, default 200), height in meters (camera altitude above ground, default 50), and heading in degrees (direction to look FROM, 0=south-of-target-looking-north, 90=west-of-target-looking-east, default 0).',
+  chatOnly: true, // Force through chat path so AI can chain geocode → look-at → screenshot
+  description: 'Position the camera near a target and look toward it. Use for ground-level, eye-level, drone, or any angled view of a landmark or feature. The camera is placed at a specified distance and height from the target, aimed toward a point at targetHeight on the target. Parameters: lat/lon of the target, distance (meters from target, default 200), cameraHeight (camera altitude above ground in meters, default 30), targetHeight (height of the thing to look at in meters above ground, default 30), heading (direction camera is FROM the target: 0=south looking north, 90=west looking east, default 0).',
   patterns: ['look at {place}', 'view {place} from ground'],
   params: [
     { name: 'lat', type: 'number', required: true, description: 'Target latitude in degrees' },
     { name: 'lon', type: 'number', required: true, description: 'Target longitude in degrees' },
     { name: 'distance', type: 'number', required: false, description: 'Distance from target in meters (default 200)' },
-    { name: 'height', type: 'number', required: false, description: 'Camera height above ground in meters (default 50)' },
-    { name: 'heading', type: 'number', required: false, description: 'Direction to view FROM in degrees. 0 = camera south of target looking north. 90 = camera west looking east. (default 0)' },
+    { name: 'cameraHeight', type: 'number', required: false, description: 'Camera height above ground in meters (default 30)' },
+    { name: 'targetHeight', type: 'number', required: false, description: 'Height of the feature to look at in meters above ground. E.g. Big Ben clock face = 55, Eiffel Tower top = 330, a house = 10. (default 30)' },
+    { name: 'heading', type: 'number', required: false, description: 'Direction camera is FROM the target in degrees. 0 = camera south of target looking north. 90 = camera west looking east. (default 0)' },
   ],
   handler: (params) => {
     const viewer = getViewer()
@@ -662,41 +664,46 @@ const lookAt: CommandEntry = {
     const targetLon = typeof params.lon === 'number' ? params.lon : parseFloat(String(params.lon))
     if (isNaN(targetLat) || isNaN(targetLon)) return 'Invalid coordinates'
 
-    const distance = typeof params.distance === 'number' ? params.distance : (params.distance ? parseFloat(String(params.distance)) : 200)
-    const height = typeof params.height === 'number' ? params.height : (params.height ? parseFloat(String(params.height)) : 50)
-    const headingDeg = typeof params.heading === 'number' ? params.heading : (params.heading ? parseFloat(String(params.heading)) : 0)
+    const parseOr = (val: unknown, fallback: number) => {
+      if (typeof val === 'number') return val
+      if (val != null) { const n = parseFloat(String(val)); if (!isNaN(n)) return n }
+      return fallback
+    }
+    const distance = parseOr(params.distance, 200)
+    const cameraHeight = parseOr(params.cameraHeight, 30)
+    const targetHeight = parseOr(params.targetHeight, 30)
+    const headingDeg = parseOr(params.heading, 0)
 
     playRumble()
 
-    // Compute camera position: offset from target by `distance` meters in the direction
-    // specified by heading. Heading 0 = camera is SOUTH of target, looking NORTH toward it.
+    // Compute camera position: offset from target by `distance` meters
+    // Heading 0 = camera is SOUTH of target, looking NORTH toward it.
     const headingRad = Cesium.Math.toRadians(headingDeg)
-    const targetCartographic = Cesium.Cartographic.fromDegrees(targetLon, targetLat)
 
     // Approximate meter offsets using local tangent plane
-    // At the target latitude, 1 degree lat ~ 111,320m, 1 degree lon ~ 111,320 * cos(lat)
     const metersPerDegreeLat = 111_320
     const metersPerDegreeLon = 111_320 * Math.cos(Cesium.Math.toRadians(targetLat))
 
-    // Camera offset: heading 0 means camera is south (negative lat offset), looking north
     const latOffset = -Math.cos(headingRad) * distance / metersPerDegreeLat
     const lonOffset = -Math.sin(headingRad) * distance / metersPerDegreeLon
 
     const cameraLat = targetLat + latOffset
     const cameraLon = targetLon + lonOffset
 
-    // Compute pitch: angle from horizontal to look up at the target
-    // If camera is lower than target, pitch up; if higher, pitch down
-    // For ground-level views, a slight upward pitch looks natural
-    const pitchRad = -Math.atan2(height, distance) + Cesium.Math.toRadians(15) // tilt up 15° from level
+    // Compute pitch based on the height difference between camera and target feature.
+    // In Cesium: pitch 0 = horizontal, negative = looking down, positive not used.
+    // We want to look from cameraHeight toward targetHeight at the given distance.
+    const heightDiff = targetHeight - cameraHeight // positive = target above camera
+    const pitchRad = Math.atan2(heightDiff, distance) // positive when looking up, negative when looking down
+    // Cesium pitch: 0 = horizontal, -PI/2 = straight down. atan2 gives us the right sign.
 
     // Heading from camera toward target is opposite of the offset direction
     const lookHeadingRad = Cesium.Math.toRadians((headingDeg + 180) % 360)
 
-    console.log(`[look-at] Camera at (${cameraLat.toFixed(5)}, ${cameraLon.toFixed(5)}, ${height}m), looking toward (${targetLat}, ${targetLon}), heading ${((headingDeg + 180) % 360).toFixed(0)}°, pitch ${Cesium.Math.toDegrees(pitchRad).toFixed(1)}°`)
+    console.log(`[look-at] Camera at (${cameraLat.toFixed(5)}, ${cameraLon.toFixed(5)}, ${cameraHeight}m), target at (${targetLat}, ${targetLon}, ${targetHeight}m), heading ${((headingDeg + 180) % 360).toFixed(0)}°, pitch ${Cesium.Math.toDegrees(pitchRad).toFixed(1)}°, distance ${distance}m`)
 
     viewer.camera.flyTo({
-      destination: Cesium.Cartesian3.fromDegrees(cameraLon, cameraLat, height),
+      destination: Cesium.Cartesian3.fromDegrees(cameraLon, cameraLat, cameraHeight),
       orientation: {
         heading: lookHeadingRad,
         pitch: pitchRad,
@@ -706,7 +713,7 @@ const lookAt: CommandEntry = {
     })
 
     const dirLabel = headingDeg === 0 ? 'south' : headingDeg === 90 ? 'west' : headingDeg === 180 ? 'north' : headingDeg === 270 ? 'east' : `${headingDeg}°`
-    return `Positioned camera ${Math.round(distance)}m ${dirLabel} of target at ${Math.round(height)}m height, looking toward (${targetLat.toFixed(4)}, ${targetLon.toFixed(4)})`
+    return `Camera positioned ${Math.round(distance)}m ${dirLabel} of target at ${Math.round(cameraHeight)}m, looking toward (${targetLat.toFixed(4)}, ${targetLon.toFixed(4)}) at ${Math.round(targetHeight)}m height. Pitch: ${Cesium.Math.toDegrees(pitchRad).toFixed(1)}°.`
   },
 }
 
