@@ -12,6 +12,27 @@ import {
 } from '@/scene/engine'
 import { toggleMute, isMuted, playRumble } from '@/audio/sounds'
 
+// --- Helpers ---
+
+/**
+ * Awaitable flyTo: wraps Cesium's camera.flyTo in a Promise that resolves
+ * when the animation completes. This ensures tool handlers don't return
+ * before the camera has actually arrived, preventing race conditions when
+ * chaining navigation commands (e.g. go-to followed by look-at).
+ */
+function flyToAsync(
+  camera: Cesium.Camera,
+  options: Cesium.CameraFlyToOptions,
+): Promise<void> {
+  return new Promise((resolve) => {
+    camera.flyTo({
+      ...options,
+      complete: () => resolve(),
+      cancel: () => resolve(), // resolve even if cancelled (e.g. by another flyTo)
+    })
+  })
+}
+
 // --- Navigation commands ---
 
 const goTo: CommandEntry = {
@@ -42,7 +63,7 @@ const goTo: CommandEntry = {
         const lon = parseFloat(coordMatch[1])
         const lat = parseFloat(coordMatch[2])
         const alt = coordMatch[3] ? parseFloat(coordMatch[3]) : 50_000
-        viewer.camera.flyTo({
+        await flyToAsync(viewer.camera, {
           destination: Cesium.Cartesian3.fromDegrees(lon, lat, alt),
           duration: 2.0,
         })
@@ -53,7 +74,7 @@ const goTo: CommandEntry = {
       const location = KNOWN_LOCATIONS[place.toLowerCase()]
       if (location) {
         console.log('[go-to] Found location:', location)
-        viewer.camera.flyTo({
+        await flyToAsync(viewer.camera, {
           destination: Cesium.Cartesian3.fromDegrees(location.lon, location.lat, location.height ?? 50_000),
           duration: 2.0,
         })
@@ -113,7 +134,7 @@ const goTo: CommandEntry = {
           console.log(`[go-to] Other candidates:`, data.slice(0, 4).map((d: any) => `${d.display_name} (${d.class}/${d.type})`))
         }
         console.log(`[go-to] Geocoder found: ${best.display_name} (${lat}, ${lon}, type: ${type})`)
-        viewer.camera.flyTo({
+        await flyToAsync(viewer.camera, {
           destination: Cesium.Cartesian3.fromDegrees(lon, lat, height),
           duration: 2.0,
         })
@@ -136,11 +157,11 @@ const resetView: CommandEntry = {
   description: 'Reset the camera to the default home view',
   patterns: ['reset view', 'reset', 'home', 'go home', 'default view'],
   params: [],
-  handler: () => {
+  handler: async () => {
     const viewer = getViewer()
     if (!viewer) return
     playRumble()
-    viewer.camera.flyTo({
+    await flyToAsync(viewer.camera, {
       destination: Cesium.Cartesian3.fromDegrees(10, 30, 25_000_000),
       orientation: {
         heading: Cesium.Math.toRadians(0),
@@ -160,13 +181,13 @@ const zoomIn: CommandEntry = {
   description: 'Zoom in one step (reduces altitude by ~60%). Only for small incremental adjustments. For large jumps or specific altitudes, use core:zoom-to instead.',
   patterns: ['zoom in', 'closer', 'get closer'],
   params: [],
-  handler: () => {
+  handler: async () => {
     const viewer = getViewer()
     if (!viewer) return 'No viewer available'
     playRumble()
     const pos = viewer.camera.positionCartographic
     const newHeight = Math.max(pos.height * 0.4, 100) // don't go below 100m
-    viewer.camera.flyTo({
+    await flyToAsync(viewer.camera, {
       destination: Cesium.Cartesian3.fromRadians(pos.longitude, pos.latitude, newHeight),
       orientation: {
         heading: viewer.camera.heading,
@@ -187,13 +208,13 @@ const zoomOut: CommandEntry = {
   description: 'Zoom out one step (increases altitude by ~2.5x). Only for small incremental adjustments. For large jumps or specific altitudes, use core:zoom-to instead.',
   patterns: ['zoom out', 'further', 'pull back', 'back up'],
   params: [],
-  handler: () => {
+  handler: async () => {
     const viewer = getViewer()
     if (!viewer) return 'No viewer available'
     playRumble()
     const pos = viewer.camera.positionCartographic
     const newHeight = Math.min(pos.height * 2.5, 25_000_000) // max 25,000 km
-    viewer.camera.flyTo({
+    await flyToAsync(viewer.camera, {
       destination: Cesium.Cartesian3.fromRadians(pos.longitude, pos.latitude, newHeight),
       orientation: {
         heading: viewer.camera.heading,
@@ -216,7 +237,7 @@ const zoomTo: CommandEntry = {
   params: [
     { name: 'altitude', type: 'number', required: true, description: 'Target altitude in kilometers' },
   ],
-  handler: (params) => {
+  handler: async (params) => {
     const viewer = getViewer()
     if (!viewer) return 'No viewer available'
     const altKm = typeof params.altitude === 'number' ? params.altitude : parseFloat(String(params.altitude))
@@ -224,7 +245,7 @@ const zoomTo: CommandEntry = {
     playRumble()
     const pos = viewer.camera.positionCartographic
     const altMeters = Math.min(Math.max(altKm * 1000, 100), 25_000_000)
-    viewer.camera.flyTo({
+    await flyToAsync(viewer.camera, {
       destination: Cesium.Cartesian3.fromRadians(pos.longitude, pos.latitude, altMeters),
       orientation: {
         heading: viewer.camera.heading,
@@ -245,12 +266,12 @@ const faceNorth: CommandEntry = {
   description: 'Rotate the camera to face north',
   patterns: ['face north', 'north up', 'orient north'],
   params: [],
-  handler: () => {
+  handler: async () => {
     const viewer = getViewer()
     if (!viewer) return
     playRumble()
     const pos = viewer.camera.positionCartographic
-    viewer.camera.flyTo({
+    await flyToAsync(viewer.camera, {
       destination: Cesium.Cartesian3.fromRadians(pos.longitude, pos.latitude, pos.height),
       orientation: { heading: 0, pitch: viewer.camera.pitch, roll: 0 },
       duration: 1.0,
@@ -656,7 +677,7 @@ const lookAt: CommandEntry = {
     { name: 'targetHeight', type: 'number', required: false, description: 'Height of the feature to look at in meters above ground. E.g. Big Ben clock face = 55, Eiffel Tower top = 330, a house = 10. (default 30)' },
     { name: 'heading', type: 'number', required: false, description: 'Direction camera is FROM the target in degrees. 0 = camera south of target looking north. 90 = camera west looking east. (default 0)' },
   ],
-  handler: (params) => {
+  handler: async (params) => {
     const viewer = getViewer()
     if (!viewer) return 'No viewer available'
 
@@ -702,7 +723,7 @@ const lookAt: CommandEntry = {
 
     console.log(`[look-at] Camera at (${cameraLat.toFixed(5)}, ${cameraLon.toFixed(5)}, ${cameraHeight}m), target at (${targetLat}, ${targetLon}, ${targetHeight}m), heading ${((headingDeg + 180) % 360).toFixed(0)}°, pitch ${Cesium.Math.toDegrees(pitchRad).toFixed(1)}°, distance ${distance}m`)
 
-    viewer.camera.flyTo({
+    await flyToAsync(viewer.camera, {
       destination: Cesium.Cartesian3.fromDegrees(cameraLon, cameraLat, cameraHeight),
       orientation: {
         heading: lookHeadingRad,
