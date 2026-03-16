@@ -1,4 +1,4 @@
-# Earth Explorer
+# Worldscope
 
 An interactive 3D globe for visualizing and exploring Earth data. Built on CesiumJS with Google Photorealistic 3D Tiles, AI-powered navigation, and an MCP server for integration with Claude and other AI assistants.
 
@@ -25,16 +25,16 @@ Copy `.env.example` to `.env` and fill in any keys you want:
 
 ## AI Integration (MCP)
 
-Earth Explorer includes an MCP (Model Context Protocol) server that lets AI assistants control the globe. This works with Claude Code, Claude Desktop, or any MCP-compatible client.
+Worldscope includes an MCP (Model Context Protocol) server that lets AI assistants control the globe. This works with Claude Code, Claude Desktop, or any MCP-compatible client.
 
 ### With Claude Code
 
 The `.mcp.json` in the project root auto-registers the server. Just start the dev server and open a Claude Code session in this directory — the tools are available immediately.
 
-To auto-approve all Earth Explorer tools, run:
+To auto-approve all Worldscope tools, run:
 
 ```
-/allowed-tools mcp__earth-explorer__*
+/allowed-tools mcp__worldscope__*
 ```
 
 Or add it to `.claude/settings.local.json` for persistence:
@@ -42,7 +42,7 @@ Or add it to `.claude/settings.local.json` for persistence:
 ```json
 {
   "permissions": {
-    "allow": ["mcp__earth-explorer__*"]
+    "allow": ["mcp__worldscope__*"]
   }
 }
 ```
@@ -54,10 +54,10 @@ Add to `~/.claude/claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "earth-explorer": {
+    "worldscope": {
       "command": "npx",
       "args": ["tsx", "src/mcp/server.ts"],
-      "cwd": "/path/to/earth-explorer"
+      "cwd": "/path/to/worldscope"
     }
   }
 }

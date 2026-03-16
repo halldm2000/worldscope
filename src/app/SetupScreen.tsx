@@ -13,7 +13,7 @@ export function SetupScreen() {
   return (
     <div className={styles.screen}>
       <div className={styles.card}>
-        <h1 className={styles.title}>Earth Explorer</h1>
+        <h1 className={styles.title}>Worldscope</h1>
         <p className={styles.subtitle}>
           The app should launch automatically. If you see this screen,
           use the command bar to set your Cesium Ion token:

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * MCP Server for Earth Explorer.
+ * MCP Server for Worldscope.
  *
  * Runs as a standalone Node.js process. Communicates with AI clients via
  * MCP protocol (stdio or HTTP) and connects to the Vite dev server's
@@ -16,9 +16,9 @@
  * Claude Desktop config (~/.claude/claude_desktop_config.json):
  *   {
  *     "mcpServers": {
- *       "earth-explorer": {
+ *       "worldscope": {
  *         "command": "npx",
- *         "args": ["tsx", "/path/to/earth-explorer/src/mcp/server.ts"]
+ *         "args": ["tsx", "/path/to/worldscope/src/mcp/server.ts"]
  *       }
  *     }
  *   }
@@ -184,7 +184,7 @@ function callBrowserTool(
   return new Promise((resolve) => {
     if (!brokerSocket || brokerSocket.readyState !== WebSocket.OPEN) {
       resolve({
-        content: 'Earth Explorer is not connected. Make sure the dev server is running (pnpm dev).',
+        content: 'Worldscope is not connected. Make sure the dev server is running (pnpm dev).',
         isError: true,
       })
       return
@@ -210,7 +210,7 @@ function callBrowserTool(
 // ── MCP server ──
 
 const mcpServer = new McpServer({
-  name: 'earth-explorer',
+  name: 'worldscope',
   version: '1.0.0',
 })
 
@@ -284,10 +284,10 @@ function buildMcpContent(result: { content: string; blocks?: McpContentBlock[] }
 // Register a status resource so clients can check connection state
 mcpServer.resource(
   'status',
-  'earth-explorer://status',
+  'worldscope://status',
   async () => ({
     contents: [{
-      uri: 'earth-explorer://status',
+      uri: 'worldscope://status',
       text: JSON.stringify({
         brokerConnected: brokerSocket?.readyState === WebSocket.OPEN,
         toolCount: currentTools.length,
@@ -355,7 +355,7 @@ async function startHttp(httpPort: number): Promise<void> {
       })
 
       const sessionServer = new McpServer({
-        name: 'earth-explorer',
+        name: 'worldscope',
         version: '1.0.0',
       })
 
@@ -430,10 +430,10 @@ function registerToolsOn(server: McpServer): void {
 function registerResourcesOn(server: McpServer): void {
   server.resource(
     'status',
-    'earth-explorer://status',
+    'worldscope://status',
     async () => ({
       contents: [{
-        uri: 'earth-explorer://status',
+        uri: 'worldscope://status',
         text: JSON.stringify({
           brokerConnected: brokerSocket?.readyState === WebSocket.OPEN,
           toolCount: currentTools.length,

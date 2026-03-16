@@ -1,8 +1,8 @@
-# Earth Explorer Architecture
+# Worldscope Architecture
 
 ## What This Is
 
-Earth Explorer is a runtime for interactive 3D Earth applications. It provides a globe, a conversational command system, a layer registry, base map switching, and a plugin contract. Everything else (weather visualization, earthquake monitoring, hurricane tracking, satellite imagery, ship routes, AI model outputs) lives in separate repos and plugs in at runtime.
+Worldscope is a runtime for interactive 3D Earth applications. It provides a globe, a conversational command system, a layer registry, base map switching, and a plugin contract. Everything else (weather visualization, earthquake monitoring, hurricane tracking, satellite imagery, ship routes, AI model outputs) lives in separate repos and plugs in at runtime.
 
 The goal: scientists and developers can build "digital twin" applications on top of this platform without touching the core codebase, and without bundling their app code into this repo.
 
@@ -39,7 +39,7 @@ src/
 A plugin is an ES module that exports an `EarthPlugin` object. The core hands it an `ExplorerAPI` object during setup, and the plugin registers whatever it needs: layers, commands, data sources, UI panels.
 
 ```typescript
-import type { EarthPlugin } from 'earth-explorer/plugin-api'
+import type { EarthPlugin } from 'worldscope/plugin-api'
 
 const plugin: EarthPlugin = {
   id: 'earthquake-monitor',

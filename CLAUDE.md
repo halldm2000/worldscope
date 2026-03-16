@@ -1,4 +1,4 @@
-# Earth Explorer
+# Worldscope
 
 An interactive 3D globe for visualizing and exploring Earth data. Built as a general-purpose platform with a modular app system for simulations (flood, fire, climate projections), weather overlays, and NVIDIA Earth-2 model inference.
 
@@ -49,7 +49,7 @@ Never commit `.env`. The app shows an onboarding screen if tokens are missing.
 
 ## MCP Integration (Important for AI Agents)
 
-This project has an MCP server that lets AI assistants control the 3D globe. If you have `earth-explorer` MCP tools available, **just use them**. That's it.
+This project has an MCP server that lets AI assistants control the 3D globe. If you have `worldscope` MCP tools available, **just use them**. That's it.
 
 - **Do NOT start the dev server.** The user manages it. If tools return "not connected", ask the user to run `pnpm dev` in the project directory.
 - **Do NOT use worktrees.** The MCP server must run from the main project directory.

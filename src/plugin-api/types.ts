@@ -1,5 +1,5 @@
 /**
- * Earth Explorer Plugin API
+ * Worldscope Plugin API
  *
  * This is the stable contract between the core runtime and external plugins.
  * Plugins interact with the globe exclusively through this interface.

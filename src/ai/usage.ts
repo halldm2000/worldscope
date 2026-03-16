@@ -88,7 +88,7 @@ class UsageTracker {
 
   private getLifetime(): { inputTokens: number; outputTokens: number; cost: number; requests: number } {
     try {
-      const raw = localStorage.getItem('earth-explorer-usage')
+      const raw = localStorage.getItem('worldscope-usage')
       if (raw) return JSON.parse(raw)
     } catch { /* ignore */ }
     return { inputTokens: 0, outputTokens: 0, cost: 0, requests: 0 }
@@ -96,7 +96,7 @@ class UsageTracker {
 
   private saveLifetime(data: { inputTokens: number; outputTokens: number; cost: number; requests: number }): void {
     try {
-      localStorage.setItem('earth-explorer-usage', JSON.stringify(data))
+      localStorage.setItem('worldscope-usage', JSON.stringify(data))
     } catch { /* ignore */ }
   }
 }

@@ -282,8 +282,8 @@ export function createOpenRouterProvider(apiKey: string, model?: string): OpenAI
     apiKey,
     defaultModel: model || 'anthropic/claude-sonnet-4-20250514',
     extraHeaders: {
-      'HTTP-Referer': 'https://earth-explorer.dev',
-      'X-Title': 'Earth Explorer',
+      'HTTP-Referer': 'https://worldscope.dev',
+      'X-Title': 'Worldscope',
     },
   })
 }

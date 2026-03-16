@@ -1,4 +1,4 @@
-# Earth Explorer: AI Interface & UX Design
+# Worldscope: AI Interface & UX Design
 
 ## Core Principle
 

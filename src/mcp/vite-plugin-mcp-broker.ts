@@ -164,7 +164,7 @@ export function mcpBrokerPlugin(): Plugin {
               sendTo(serverWs, {
                 type: 'tool-result',
                 callId: msg.callId,
-                content: 'Earth Explorer is not connected. Open the app in your browser first.',
+                content: 'Worldscope is not connected. Open the app in your browser first.',
                 isError: true,
               } as BrowserToServerMessage)
             }

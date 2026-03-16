@@ -550,7 +550,7 @@ function buildSystemPrompt(): string {
 
   const state = getStateSnapshot()
 
-  let prompt = `You are an AI assistant embedded in Earth Explorer, an interactive 3D globe application built with CesiumJS. You help users explore and understand Earth through data visualization, scientific analysis, and natural conversation.
+  let prompt = `You are an AI assistant embedded in Worldscope, an interactive 3D globe application built with CesiumJS. You help users explore and understand Earth through data visualization, scientific analysis, and natural conversation.
 
 Current viewer state:
 ${state}

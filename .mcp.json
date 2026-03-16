@@ -1,9 +1,9 @@
 {
   "mcpServers": {
-    "earth-explorer": {
+    "worldscope": {
       "command": "npx",
       "args": ["tsx", "src/mcp/server.ts"],
-      "cwd": "/Users/dhall/Dropbox/WORK_NVIDIA/NV_PROJECTS/earth-explorer"
+      "cwd": "/Users/dhall/Dropbox/WORK_NVIDIA/NV_PROJECTS/worldscope"
     }
   }
 }

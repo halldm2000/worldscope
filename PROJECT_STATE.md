@@ -18,7 +18,7 @@ Core runtime ~85% complete. MCP server fully operational with dual transport (st
 | 2026-03-15 | Switch to pnpm (Dropbox compat) | package.json, pnpm-lock.yaml |
 | 2026-03-15 | Register MCP server with Claude Code | ~/.claude.json |
 | 2026-03-13 | Project scaffolded from agent-studio template | All |
-| 2026-03-13 | CLAUDE.md customized for CesiumJS + Earth Explorer | CLAUDE.md |
+| 2026-03-13 | CLAUDE.md customized for CesiumJS + Worldscope | CLAUDE.md |
 
 ## MCP Architecture
 
@@ -39,7 +39,7 @@ Tools are dynamically registered from the browser's command registry. When plugi
 ## Known Issues
 
 - MCP tool schema caching: new/changed tool params require MCP server restart to take effect
-- Prototype single-file HTML (CLAUDE-COWORK/earth-explorer.html) has features not yet ported to modular structure
+- Prototype single-file HTML (CLAUDE-COWORK/worldscope.html) has features not yet ported to modular structure
 - vite-plugin-cesium peer dep warning (wants rollup ^2.25, project uses rollup 4)
 
 ## Architecture Notes
