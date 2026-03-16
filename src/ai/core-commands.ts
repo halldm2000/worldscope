@@ -333,17 +333,25 @@ const toggleTerrain: CommandEntry = {
   description: 'Switch between 3D terrain and flat surface',
   patterns: ['toggle terrain', 'flat earth', 'show terrain', 'hide terrain'],
   params: [],
-  handler: () => {
+  handler: async () => {
     const viewer = getViewer()
     if (!viewer) return
     const globe = viewer.scene.globe
+
+    // Photorealistic 3D tiles have baked-in terrain mesh — must switch to OSM to flatten
+    if (getBuildingMode() === 'photorealistic') {
+      setBuildingMode('osm')
+      setAutoSwitch(false)
+    }
+
     if (globe.terrainProvider instanceof Cesium.EllipsoidTerrainProvider) {
       // Re-enable terrain
-      Cesium.CesiumTerrainProvider.fromIonAssetId(1).then(tp => {
-        globe.terrainProvider = tp
-      })
+      const tp = await Cesium.CesiumTerrainProvider.fromIonAssetId(1)
+      globe.terrainProvider = tp
+      return 'Terrain enabled'
     } else {
       globe.terrainProvider = new Cesium.EllipsoidTerrainProvider()
+      return 'Terrain flattened'
     }
   },
 }
