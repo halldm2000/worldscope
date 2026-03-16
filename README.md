@@ -168,4 +168,4 @@ src/
 
 ## License
 
-NVIDIA Proprietary.
+[Apache 2.0](LICENSE) — Copyright 2026 NVIDIA Corporation
