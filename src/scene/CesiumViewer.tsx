@@ -4,7 +4,7 @@ import { useStore } from '@/store'
 import { setViewer, setBuildingTilesets, updateBuildingMode } from './engine'
 import { playRumble } from '@/audio/sounds'
 
-const MAX_ALTITUDE = 25_000_000 // 25,000 km
+const MAX_ALTITUDE = 12_000_000 // 12,000 km
 const HOME = { lon: 10, lat: 30, height: MAX_ALTITUDE, heading: 0, pitch: -90 }
 
 export function CesiumViewer() {

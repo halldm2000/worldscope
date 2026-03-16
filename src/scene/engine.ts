@@ -79,6 +79,124 @@ export function updateBuildingMode(altitude: number): void {
   }
 }
 
+// ── Orbit animation ──
+
+interface OrbitState {
+  targetLat: number    // degrees
+  targetLon: number    // degrees
+  distance: number     // meters from target
+  cameraHeight: number // meters above ground
+  targetHeight: number // meters above ground
+  heading: number      // current heading in degrees
+  speed: number        // degrees per second
+  removeListener: (() => void) | null
+  cleanupInput: (() => void) | null
+}
+
+let _orbit: OrbitState | null = null
+
+export function isOrbiting(): boolean { return _orbit !== null }
+
+export function startOrbit(opts: {
+  targetLat: number
+  targetLon: number
+  distance: number
+  cameraHeight: number
+  targetHeight: number
+  heading?: number
+  speed?: number
+}): void {
+  stopOrbit()
+  if (!_viewer) return
+
+  _orbit = {
+    targetLat: opts.targetLat,
+    targetLon: opts.targetLon,
+    distance: opts.distance,
+    cameraHeight: opts.cameraHeight,
+    targetHeight: opts.targetHeight,
+    heading: opts.heading ?? 0,
+    speed: opts.speed ?? 5,  // 5 degrees/sec = ~72 sec full rotation
+    removeListener: null,
+    cleanupInput: null,
+  }
+
+  // Stop orbit on any user navigation input
+  const canvas = _viewer.canvas
+  const cancelOrbit = () => stopOrbit()
+  canvas.addEventListener('mousedown', cancelOrbit)
+  canvas.addEventListener('wheel', cancelOrbit)
+  canvas.addEventListener('pointerdown', cancelOrbit)
+  const cancelOnKey = (e: KeyboardEvent) => {
+    // Only cancel on navigation-related keys, not all keys
+    const navKeys = new Set(['w','a','s','d','q','e','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','+','-','='])
+    if (navKeys.has(e.key)) cancelOrbit()
+  }
+  document.addEventListener('keydown', cancelOnKey)
+
+  // Gamepad: check in the tick listener below
+  let lastGamepadTimestamp = 0
+
+  _orbit.cleanupInput = () => {
+    canvas.removeEventListener('mousedown', cancelOrbit)
+    canvas.removeEventListener('wheel', cancelOrbit)
+    canvas.removeEventListener('pointerdown', cancelOrbit)
+    document.removeEventListener('keydown', cancelOnKey)
+  }
+
+  const listener = _viewer.clock.onTick.addEventListener((clock) => {
+    if (!_orbit || !_viewer) return
+
+    // Check for gamepad input
+    const gamepads = navigator.getGamepads()
+    for (const gp of gamepads) {
+      if (!gp) continue
+      if (gp.timestamp > lastGamepadTimestamp) {
+        const hasInput = gp.axes.some(a => Math.abs(a) > 0.15) || gp.buttons.some(b => b.pressed)
+        if (hasInput) { stopOrbit(); return }
+        lastGamepadTimestamp = gp.timestamp
+      }
+    }
+
+    const dt = clock.multiplier / 60 // approximate seconds per tick at 60fps
+    _orbit.heading = (_orbit.heading + _orbit.speed * dt) % 360
+
+    const headingRad = Cesium.Math.toRadians(_orbit.heading)
+    const metersPerDegreeLat = 111_320
+    const metersPerDegreeLon = 111_320 * Math.cos(Cesium.Math.toRadians(_orbit.targetLat))
+
+    const latOffset = -Math.cos(headingRad) * _orbit.distance / metersPerDegreeLat
+    const lonOffset = -Math.sin(headingRad) * _orbit.distance / metersPerDegreeLon
+
+    const cameraLat = _orbit.targetLat + latOffset
+    const cameraLon = _orbit.targetLon + lonOffset
+
+    const heightDiff = _orbit.targetHeight - _orbit.cameraHeight
+    const pitchRad = Math.atan2(heightDiff, _orbit.distance)
+
+    _viewer.camera.setView({
+      destination: Cesium.Cartesian3.fromDegrees(cameraLon, cameraLat, _orbit.cameraHeight),
+      orientation: {
+        heading: headingRad,
+        pitch: pitchRad,
+        roll: 0,
+      },
+    })
+  })
+
+  _orbit.removeListener = () => listener()
+  console.log(`[engine] Orbit started: ${_orbit.speed}°/s around (${opts.targetLat.toFixed(4)}, ${opts.targetLon.toFixed(4)})`)
+}
+
+export function stopOrbit(): void {
+  if (_orbit) {
+    _orbit.removeListener?.()
+    _orbit.cleanupInput?.()
+    _orbit = null
+    console.log('[engine] Orbit stopped')
+  }
+}
+
 // ── Base map imagery styles ──
 
 export type BaseMapStyle = 'default' | 'satellite' | 'dark' | 'light' | 'road'

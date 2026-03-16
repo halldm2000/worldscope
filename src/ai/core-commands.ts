@@ -8,6 +8,7 @@ import type { CommandEntry } from './types'
 import {
   getViewer, getBuildingMode, setBuildingMode, setAutoSwitch,
   setBaseMapStyle, getBaseMapStyles, getBaseMapStyle,
+  startOrbit, stopOrbit, isOrbiting,
   type BaseMapStyle,
 } from '@/scene/engine'
 import { toggleMute, isMuted, playRumble } from '@/audio/sounds'
@@ -762,9 +763,59 @@ const lookAt: CommandEntry = {
   },
 }
 
+// --- Orbit command ---
+
+const orbit: CommandEntry = {
+  id: 'core:orbit',
+  name: 'Orbit',
+  module: 'core',
+  category: 'navigation',
+  description: 'Start or stop orbiting around a target point. Call with lat/lon to start orbiting, or call with no args to stop. Speed is degrees per second (default 5 = ~72s per revolution).',
+  patterns: ['orbit', 'orbit around', 'stop orbit'],
+  params: [
+    { name: 'lat', type: 'number', required: false, description: 'Target latitude (omit to stop orbiting)' },
+    { name: 'lon', type: 'number', required: false, description: 'Target longitude' },
+    { name: 'distance', type: 'number', required: false, description: 'Distance from target in meters (default 300)' },
+    { name: 'cameraHeight', type: 'number', required: false, description: 'Camera height above ground in meters (default 100)' },
+    { name: 'targetHeight', type: 'number', required: false, description: 'Height of the feature to orbit around in meters (default 30)' },
+    { name: 'speed', type: 'number', required: false, description: 'Orbit speed in degrees per second (default 5)' },
+  ],
+  handler: async (params) => {
+    // No lat/lon = toggle off
+    if (params.lat == null || params.lon == null) {
+      if (isOrbiting()) {
+        stopOrbit()
+        return 'Orbit stopped'
+      }
+      return 'Not currently orbiting. Provide lat/lon to start.'
+    }
+
+    const lat = typeof params.lat === 'number' ? params.lat : parseFloat(String(params.lat))
+    const lon = typeof params.lon === 'number' ? params.lon : parseFloat(String(params.lon))
+    if (isNaN(lat) || isNaN(lon)) return 'Invalid coordinates'
+
+    const parseOr = (val: unknown, fallback: number) => {
+      if (typeof val === 'number') return val
+      if (val != null) { const n = parseFloat(String(val)); if (!isNaN(n)) return n }
+      return fallback
+    }
+
+    playRumble()
+    startOrbit({
+      targetLat: lat,
+      targetLon: lon,
+      distance: parseOr(params.distance, 300),
+      cameraHeight: parseOr(params.cameraHeight, 100),
+      targetHeight: parseOr(params.targetHeight, 30),
+      speed: parseOr(params.speed, 5),
+    })
+    return `Orbiting (${lat.toFixed(4)}, ${lon.toFixed(4)}) — say "stop orbit" to end`
+  },
+}
+
 /** All core commands */
 export const coreCommands: CommandEntry[] = [
-  goTo, resetView, zoomIn, zoomOut, zoomTo, faceDirection, lookAt,
+  goTo, resetView, zoomIn, zoomOut, zoomTo, faceDirection, lookAt, orbit,
   toggleBuildings, toggleTerrain, toggleLighting, setTimeOfDay,
   baseMap, listBaseMaps,
   muteToggle, whatCanYouDo, fullscreen, setProvider, setCesiumToken,
