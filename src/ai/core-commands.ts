@@ -1027,6 +1027,70 @@ const readMessages: CommandEntry = {
   },
 }
 
+// --- App management commands ---
+
+const listApps: CommandEntry = {
+  id: 'core:list-apps',
+  name: 'List apps',
+  module: 'core',
+  category: 'system',
+  description: 'List all registered Worldscope apps and their status',
+  patterns: ['list apps', 'show apps', 'apps', 'what apps', 'available apps'],
+  params: [],
+  handler: async () => {
+    const { getApps } = await import('@/apps/manager')
+    const apps = getApps()
+    if (apps.length === 0) {
+      ;(listApps as any)._lastOutput = 'No apps registered.'
+      return
+    }
+    const lines = apps.map(a => {
+      const dot = a.active ? '●' : '○'
+      return `${dot} **${a.name}** (${a.id}) — ${a.description}`
+    })
+    const output = `**Worldscope Apps** (${apps.length} registered)\n\n${lines.join('\n')}\n\nSay "activate app <id>" or "deactivate app <id>" to manage.`
+    ;(listApps as any)._lastOutput = output
+  },
+}
+
+const activateAppCmd: CommandEntry = {
+  id: 'core:activate-app',
+  name: 'Activate app',
+  module: 'core',
+  category: 'system',
+  description: 'Activate a registered Worldscope app by ID',
+  patterns: ['activate app {app}', 'enable app {app}', 'start app {app}', 'turn on app {app}'],
+  params: [
+    { name: 'app', type: 'string', required: true, description: 'App ID to activate' },
+  ],
+  handler: async (params) => {
+    const { activateApp } = await import('@/apps/manager')
+    const id = String(params.app ?? '').trim()
+    if (!id) return 'Specify an app ID. Say "list apps" to see available apps.'
+    const ok = await activateApp(id)
+    return ok ? `App "${id}" activated` : `App "${id}" not found. Say "list apps" to see available apps.`
+  },
+}
+
+const deactivateAppCmd: CommandEntry = {
+  id: 'core:deactivate-app',
+  name: 'Deactivate app',
+  module: 'core',
+  category: 'system',
+  description: 'Deactivate a running Worldscope app by ID',
+  patterns: ['deactivate app {app}', 'disable app {app}', 'stop app {app}', 'turn off app {app}'],
+  params: [
+    { name: 'app', type: 'string', required: true, description: 'App ID to deactivate' },
+  ],
+  handler: async (params) => {
+    const { deactivateApp } = await import('@/apps/manager')
+    const id = String(params.app ?? '').trim()
+    if (!id) return 'Specify an app ID. Say "list apps" to see active apps.'
+    const ok = deactivateApp(id)
+    return ok ? `App "${id}" deactivated` : `App "${id}" is not active or not found.`
+  },
+}
+
 /** All core commands */
 export const coreCommands: CommandEntry[] = [
   goTo, resetView, zoomIn, zoomOut, zoomTo, faceDirection, lookAt, orbit,
@@ -1034,4 +1098,5 @@ export const coreCommands: CommandEntry[] = [
   baseMap, listBaseMaps,
   muteToggle, whatCanYouDo, fullscreen, listProviders, pullModel, setProvider, setCesiumToken,
   postMessage, readMessages,
+  listApps, activateAppCmd, deactivateAppCmd,
 ]

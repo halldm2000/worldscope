@@ -11,6 +11,9 @@ import { ClaudeProvider } from './providers/claude'
 import { OpenAIProvider, createOpenAIProvider, createOllamaProvider, createOpenRouterProvider } from './providers/openai'
 import { initLayers } from '@/features/layers'
 import { startMcpBridge } from '@/mcp'
+import { registerApp, activateAutoApps } from '@/apps/manager'
+import { earthquakeApp } from '@/features/earthquake'
+import gibsApp from '@/features/gibs'
 
 let commandsRegistered = false
 
@@ -23,6 +26,11 @@ export function initAI(options?: { anthropicKey?: string | null }): void {
 
     // Initialize feature modules
     initLayers()
+
+    // Register and activate apps
+    registerApp(earthquakeApp)
+    registerApp(gibsApp)
+    activateAutoApps()
 
     // Start MCP bridge (connects to MCP server if running)
     startMcpBridge()

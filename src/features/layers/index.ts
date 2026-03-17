@@ -41,5 +41,5 @@ export function destroyLayers(): void {
 }
 
 // Re-export for external use
-export { registerLayer, getAllLayers } from './manager'
+export { registerLayer, getAllLayers, removeLayer } from './manager'
 export { showLayer, hideLayer, toggleLayer } from './manager'

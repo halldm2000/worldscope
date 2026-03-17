@@ -76,6 +76,22 @@ export async function toggleLayer(id: string): Promise<boolean> {
 
 // ── Cleanup ──
 
+export function removeLayer(id: string): void {
+  const layer = _layers.get(id)
+  if (!layer) return
+  const viewer = getViewer()
+  if (layer.datasource && viewer) {
+    viewer.dataSources.remove(layer.datasource, true)
+  }
+  if (layer.imageryLayer && viewer) {
+    viewer.imageryLayers.remove(layer.imageryLayer, true)
+  }
+  if (layer.tileset && viewer) {
+    viewer.scene.primitives.remove(layer.tileset)
+  }
+  _layers.delete(id)
+}
+
 export function removeAllLayers(): void {
   const viewer = getViewer()
   for (const layer of _layers.values()) {
