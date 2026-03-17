@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "mcp": "tsx src/mcp/server.ts",
-    "mcp:http": "tsx src/mcp/server.ts --transport http"
+    "mcp:tunnel": "cloudflared tunnel --url http://localhost:3002"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",

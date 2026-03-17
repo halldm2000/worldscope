@@ -3,29 +3,19 @@
  * MCP Server for Worldscope.
  *
  * Runs as a standalone Node.js process. Communicates with AI clients via
- * MCP protocol (stdio or HTTP) and connects to the Vite dev server's
- * WebSocket broker to reach the browser app.
+ * MCP protocol and connects to the Vite dev server's WebSocket broker
+ * to reach the browser app.
  *
- * Transports:
- *   --transport stdio   (default) For Claude Desktop / Claude Code
- *   --transport http    For any HTTP-capable AI client (OpenAI, custom agents, etc.)
+ * Both transports start simultaneously:
+ *   - stdio: For Claude Desktop / Claude Code
+ *   - HTTP (port 3002): For ChatGPT Desktop, OpenAI, custom agents, etc.
  *
  * Usage:
- *   npx tsx src/mcp/server.ts [--transport stdio|http] [--broker-url ws://...]
+ *   npx tsx src/mcp/server.ts [--broker-url ws://...] [--http-port 3002]
  *
- * Claude Desktop config (~/.claude/claude_desktop_config.json):
- *   {
- *     "mcpServers": {
- *       "worldscope": {
- *         "command": "npx",
- *         "args": ["tsx", "/path/to/worldscope/src/mcp/server.ts"]
- *       }
- *     }
- *   }
- *
- * HTTP mode (for non-Claude AI environments):
- *   npx tsx src/mcp/server.ts --transport http --http-port 3002
- *   Then POST MCP requests to http://localhost:3002/mcp
+ * For ChatGPT Desktop, expose the HTTP endpoint via ngrok:
+ *   ngrok http 3002
+ *   Then add the ngrok HTTPS URL in ChatGPT > Settings > Apps > Add MCP Server
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -97,7 +87,6 @@ function parseArgs() {
   const brokerPort = parseInt(get('--broker-port') || String(DEFAULT_BROKER_PORT), 10)
   const brokerUrl = get('--broker-url') || `ws://localhost:${brokerPort}${BROKER_SERVER_PATH}`
   return {
-    transport: (get('--transport') || 'stdio') as 'stdio' | 'http',
     brokerUrl,
     httpPort: parseInt(get('--http-port') || String(DEFAULT_HTTP_PORT), 10),
   }
@@ -383,8 +372,12 @@ async function startHttp(httpPort: number): Promise<void> {
     res.end(JSON.stringify({ error: 'Not found. Use /mcp for MCP protocol, /health for status.' }))
   })
 
-  httpServer.listen(httpPort, () => {
-    log(`HTTP MCP server listening on http://localhost:${httpPort}/mcp`)
+  await new Promise<void>((resolve, reject) => {
+    httpServer.on('error', reject)
+    httpServer.listen(httpPort, () => {
+      log(`HTTP MCP server listening on http://localhost:${httpPort}/mcp`)
+      resolve()
+    })
   })
 }
 
@@ -454,7 +447,7 @@ function sendBroker(msg: ServerToBrowserMessage): void {
 }
 
 function log(msg: string): void {
-  process.stderr.write(`[earth-mcp] ${msg}\n`)
+  process.stderr.write(`[worldscope-mcp] ${msg}\n`)
 }
 
 // ── Main ──
@@ -472,15 +465,24 @@ async function main(): Promise<void> {
   // Connect to broker on the Vite dev server
   connectToBroker(config.brokerUrl)
 
-  // Start the chosen MCP transport
-  if (config.transport === 'http') {
+  // Always start stdio (Claude Code, Claude Desktop, Cursor)
+  await startStdio()
+
+  // Try to start HTTP too (for ChatGPT, remote clients via tunnel)
+  // If the port is already taken (another MCP instance running), just skip it
+  try {
     await startHttp(config.httpPort)
-  } else {
-    await startStdio()
+  } catch (err: unknown) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (code === 'EADDRINUSE') {
+      log(`HTTP port ${config.httpPort} already in use, skipping HTTP transport`)
+    } else {
+      throw err
+    }
   }
 }
 
 main().catch((err) => {
-  process.stderr.write(`[earth-mcp] Fatal: ${err}\n`)
+  process.stderr.write(`[worldscope-mcp] Fatal: ${err}\n`)
   process.exit(1)
 })

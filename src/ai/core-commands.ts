@@ -345,9 +345,10 @@ const toggleTerrain: CommandEntry = {
     }
 
     if (globe.terrainProvider instanceof Cesium.EllipsoidTerrainProvider) {
-      // Re-enable terrain
+      // Re-enable terrain and restore auto-switching
       const tp = await Cesium.CesiumTerrainProvider.fromIonAssetId(1)
       globe.terrainProvider = tp
+      setAutoSwitch(true)
       return 'Terrain enabled'
     } else {
       globe.terrainProvider = new Cesium.EllipsoidTerrainProvider()
