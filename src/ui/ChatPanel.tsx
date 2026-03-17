@@ -9,7 +9,7 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useStore } from '@/store'
-import { route } from '@/ai/router'
+import { route, getProviders } from '@/ai/router'
 import { registry } from '@/ai/registry'
 import type { PanelState } from '@/ai/types'
 import { playPing, playSuccess, toggleMute, warmUp } from '@/audio/sounds'
@@ -46,15 +46,28 @@ export function ChatPanel() {
   const setIsProcessing = useStore(s => s.setIsProcessing)
 
   const [usage, setUsage] = useState<UsageSnapshot | null>(null)
+  const [activeProvider, setActiveProvider] = useState('')
 
   const inputRef = useRef<HTMLInputElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const statusTimerRef = useRef<ReturnType<typeof setTimeout>>()
 
-  // Subscribe to usage updates
+  // Subscribe to usage updates + track active provider
   useEffect(() => {
     setUsage(usageTracker.getSnapshot())
-    return usageTracker.subscribe(setUsage)
+    const updateProvider = () => {
+      const providers = getProviders()
+      const first = providers[0]
+      setActiveProvider(first?.displayName || 'none')
+    }
+    updateProvider()
+    // Poll provider changes every 2s (provider switches don't emit events)
+    const interval = setInterval(updateProvider, 2000)
+    const unsub = usageTracker.subscribe((snap) => {
+      setUsage(snap)
+      updateProvider()
+    })
+    return () => { clearInterval(interval); unsub() }
   }, [])
 
   // Auto-scroll when new messages arrive
@@ -291,6 +304,17 @@ export function ChatPanel() {
             // Don't auto-expand, let user control panel state
           }}
         />
+        {activeProvider && (
+          <div style={{
+            padding: '0 10px',
+            fontSize: 10, fontWeight: 500,
+            color: 'var(--text-muted, #666)',
+            whiteSpace: 'nowrap',
+            textTransform: 'capitalize',
+          }} title={`Active AI: ${activeProvider}`}>
+            {activeProvider}
+          </div>
+        )}
       </form>
     </div>
   )

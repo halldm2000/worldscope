@@ -235,7 +235,8 @@ Rules:
     const messages: ChatMessage[] = [{ role: 'user', content: input }]
     const stream = provider.chat(messages, undefined, {
       systemPrompt: classifierPrompt,
-      model: 'claude-haiku-4-5-20251001',
+      // Only override model for Claude (use Haiku for speed). Local providers use their default.
+      model: provider.name === 'claude' ? 'claude-haiku-4-5-20251001' : undefined,
       maxTokens: 150,
       temperature: 0,
     })
@@ -298,7 +299,8 @@ async function* runAIWithTools(
   history?: ChatMessage[],
 ): AsyncIterable<string> {
   const systemPrompt = buildSystemPrompt()
-  const tools = buildToolDefs()
+  const ollamaModels = await getOllamaModels()
+  const tools = buildToolDefs(ollamaModels)
 
   // Build conversation: history + new user message
   const messages: ChatMessage[] = []
@@ -418,25 +420,50 @@ async function executeToolCall(call: ToolCall): Promise<{ content: string | Cont
  * Auto-generate tool definitions from the command registry.
  * Every registered command becomes a tool the AI can call.
  */
-function buildToolDefs(): ToolDef[] {
+/** Cached Ollama model names for tool descriptions */
+let _ollamaModelCache: string[] = []
+let _ollamaModelCacheTime = 0
+
+async function getOllamaModels(): Promise<string[]> {
+  // Refresh cache every 30s
+  if (Date.now() - _ollamaModelCacheTime < 30_000) return _ollamaModelCache
+  try {
+    const res = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(1000) })
+    if (res.ok) {
+      const data = await res.json()
+      _ollamaModelCache = (data.models || []).map((m: any) => m.name)
+      _ollamaModelCacheTime = Date.now()
+    }
+  } catch {}
+  return _ollamaModelCache
+}
+
+function buildToolDefs(ollamaModels?: string[]): ToolDef[] {
   const commands = registry.getAll()
   return commands
     .filter(cmd => !cmd.aiHidden)
-    .map(cmd => ({
-      name: cmd.id.replace(/:/g, '_'),
-      description: `${cmd.name}: ${cmd.description}`,
-      parameters: {
-        type: 'object' as const,
-        properties: Object.fromEntries(
-          cmd.params
-            .filter(p => p.name !== '_raw')
-            .map(p => [p.name, paramToJsonSchema(p)])
-        ),
-        required: cmd.params
-          .filter(p => p.required && p.name !== '_raw')
-          .map(p => p.name),
-      },
-    }))
+    .map(cmd => {
+      let desc = `${cmd.name}: ${cmd.description}`
+      // Enrich set-provider with available models
+      if (cmd.id === 'core:set-provider' && ollamaModels && ollamaModels.length > 0) {
+        desc += ` Available Ollama models: ${ollamaModels.join(', ')}.`
+      }
+      return {
+        name: cmd.id.replace(/:/g, '_'),
+        description: desc,
+        parameters: {
+          type: 'object' as const,
+          properties: Object.fromEntries(
+            cmd.params
+              .filter(p => p.name !== '_raw')
+              .map(p => [p.name, paramToJsonSchema(p)])
+          ),
+          required: cmd.params
+            .filter(p => p.required && p.name !== '_raw')
+            .map(p => p.name),
+        },
+      }
+    })
 }
 
 function paramToJsonSchema(param: CommandParam): { type: string; description?: string; enum?: string[] } {

@@ -489,7 +489,6 @@ const listProviders: CommandEntry = {
   module: 'core',
   category: 'system',
   description: 'Show connected AI providers and available Ollama models',
-  aiHidden: true,
   patterns: ['list providers', 'show providers', 'providers', 'models', 'list models', 'which ai'],
   params: [],
   handler: async () => {
@@ -535,7 +534,6 @@ const pullModel: CommandEntry = {
   module: 'core',
   category: 'system',
   description: 'Download an Ollama model (e.g. "pull model llama3.1:8b")',
-  aiHidden: true,
   patterns: [
     'pull model {model}', 'pull {model}', 'download model {model}',
     'ollama pull {model}', 'install model {model}',
@@ -599,8 +597,7 @@ const setProvider: CommandEntry = {
   name: 'Set AI provider',
   module: 'core',
   category: 'system',
-  description: 'Configure an AI provider (anthropic, openai, ollama, openrouter)',
-  aiHidden: true,
+  description: 'Configure an AI provider. Use "ollama <model>" to switch to a local model.',
   patterns: [
     'set provider {provider} {key}',
     'set provider {provider}',
@@ -648,17 +645,46 @@ const setProvider: CommandEntry = {
     if (providerName === 'claude' || providerName === 'anthropic') providerName = 'anthropic'
     else if (providerName === 'gpt' || providerName === 'chatgpt') providerName = 'openai'
 
+    // Handle "ollama llama3" or "ollama nemotron-3-nano" as provider + model
     const validProviders = ['anthropic', 'openai', 'ollama', 'openrouter']
+    if (!validProviders.includes(providerName) && providerName.startsWith('ollama ')) {
+      key = providerName.slice(7).trim()  // extract model name
+      providerName = 'ollama'
+    }
+    // Also handle "llama3", "nemotron", etc. as implicit ollama
     if (!validProviders.includes(providerName)) {
-      console.log(`[provider] Unknown provider "${providerName}". Options: ${validProviders.join(', ')}`)
-      return
+      // Check if it looks like a model name — try ollama
+      key = providerName
+      providerName = 'ollama'
     }
 
     // Ollama doesn't need a key — the "key" param is actually the model name
     let model: string | undefined
     if (providerName === 'ollama') {
-      model = key || localStorage.getItem('ee-ollama-model') || undefined
+      const requested = key || localStorage.getItem('ee-ollama-model') || ''
+      // Fuzzy match against installed Ollama models
+      if (requested) {
+        try {
+          const res = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(2000) })
+          if (res.ok) {
+            const data = await res.json()
+            const installed: string[] = (data.models || []).map((m: any) => m.name)
+            // Exact match first, then prefix/substring match
+            model = installed.find(m => m === requested)
+              || installed.find(m => m.startsWith(requested))
+              || installed.find(m => m.includes(requested))
+              || requested  // fall through with original name
+          }
+        } catch { /* Ollama not running */ }
+      }
+      if (!model) model = requested || undefined
       key = ''
+    }
+
+    // Retrieve stored key if none provided
+    if (!key && providerName !== 'ollama') {
+      key = localStorage.getItem(`ee-${providerName}-key`)
+        || (providerName === 'anthropic' ? (import.meta.env.VITE_ANTHROPIC_API_KEY || '') : '')
     }
 
     // Persist the key

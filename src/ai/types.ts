@@ -85,6 +85,8 @@ export interface ChatOptions {
 
 export interface AIProvider {
   readonly name: string
+  /** Display label (e.g. "claude", "ollama/llama3.1:8b") */
+  readonly displayName: string
 
   available(): Promise<boolean>
 

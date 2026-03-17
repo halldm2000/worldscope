@@ -25,10 +25,14 @@ export interface OpenAIProviderConfig {
 
 export class OpenAIProvider implements AIProvider {
   readonly name: string
+  readonly displayName: string
   private config: OpenAIProviderConfig
 
   constructor(config: OpenAIProviderConfig) {
     this.name = config.name
+    this.displayName = config.name === 'ollama'
+      ? `ollama/${config.defaultModel}`
+      : config.name
     this.config = config
   }
 

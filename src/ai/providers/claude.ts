@@ -12,6 +12,7 @@ import { usageTracker } from '../usage'
 
 export class ClaudeProvider implements AIProvider {
   readonly name = 'claude'
+  readonly displayName = 'claude'
   private apiKey: string
 
   constructor(apiKey: string) {
