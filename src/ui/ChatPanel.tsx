@@ -15,6 +15,22 @@ import type { PanelState } from '@/ai/types'
 import { playPing, playSuccess, toggleMute, warmUp } from '@/audio/sounds'
 import { usageTracker, type UsageSnapshot } from '@/ai/usage'
 
+/** Marker to separate reasoning from content in message text */
+const THINKING_MARKER = '\x00REASONING\x00'
+
+/** Build display message from tool actions, content, and optional reasoning */
+function buildMessage(toolActions: string[], content: string, reasoning: string): string {
+  let msg = ''
+  if (toolActions.length > 0) {
+    msg += toolActions.map(t => `⚡ ${t}`).join('\n') + '\n'
+  }
+  if (reasoning) {
+    msg += THINKING_MARKER + reasoning + THINKING_MARKER
+  }
+  msg += content
+  return msg
+}
+
 export function ChatPanel() {
   const panelState = useStore(s => s.panelState)
   const messages = useStore(s => s.messages)
@@ -162,6 +178,7 @@ export function ChatPanel() {
       }
 
       let accumulated = ''
+      let reasoning = ''
       let toolActions: string[] = []
       for await (const chunk of result.response) {
         // Check for error marker from router
@@ -174,17 +191,17 @@ export function ChatPanel() {
         if (chunk.startsWith('\x00TOOL\x00')) {
           const toolName = chunk.slice(6).trim()
           toolActions.push(toolName)
-          const prefix = toolActions.map(t => `⚡ ${t}`).join('\n') + '\n'
-          updateLastAssistant(prefix + accumulated)
+          updateLastAssistant(buildMessage(toolActions, accumulated, reasoning))
+          continue
+        }
+        // Check for reasoning/thinking marker
+        if (chunk.startsWith('\x00THINK\x00')) {
+          reasoning += chunk.slice(7)
+          updateLastAssistant(buildMessage(toolActions, accumulated, reasoning))
           continue
         }
         accumulated += chunk
-        if (toolActions.length > 0) {
-          const prefix = toolActions.map(t => `⚡ ${t}`).join('\n') + '\n'
-          updateLastAssistant(prefix + accumulated)
-        } else {
-          updateLastAssistant(accumulated)
-        }
+        updateLastAssistant(buildMessage(toolActions, accumulated, reasoning))
       }
     }
 
@@ -287,8 +304,57 @@ export function ChatPanel() {
  * No external dependencies. Returns React elements.
  */
 function MarkdownContent({ content }: { content: string }) {
-  const rendered = useMemo(() => renderMarkdown(content), [content])
-  return <div style={{ lineHeight: 1.5 }}>{rendered}</div>
+  // Split out reasoning blocks
+  const parts = content.split(THINKING_MARKER)
+  // parts: [before, reasoning, after] or just [content] if no marker
+  const hasReasoning = parts.length >= 3
+  const reasoning = hasReasoning ? parts[1] : ''
+  const mainContent = hasReasoning ? parts[0] + parts.slice(2).join('') : content
+
+  const rendered = useMemo(() => renderMarkdown(mainContent), [mainContent])
+
+  return (
+    <div style={{ lineHeight: 1.5 }}>
+      {hasReasoning && <ThinkingBlock content={reasoning} />}
+      {rendered}
+    </div>
+  )
+}
+
+function ThinkingBlock({ content }: { content: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div style={{
+      marginBottom: 8,
+      borderRadius: 'var(--radius-sm, 6px)',
+      border: '1px solid var(--border, rgba(255,255,255,0.1))',
+      overflow: 'hidden',
+    }}>
+      <button
+        onClick={() => setOpen(!open)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          width: '100%', padding: '6px 10px',
+          background: 'rgba(255,255,255,0.05)',
+          border: 'none', cursor: 'pointer',
+          color: 'var(--text-muted, #888)', fontSize: 12,
+          fontFamily: 'inherit',
+        }}
+      >
+        <span style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▶</span>
+        Thinking...
+      </button>
+      {open && (
+        <div style={{
+          padding: '8px 10px',
+          fontSize: 12, color: 'var(--text-muted, #888)',
+          whiteSpace: 'pre-wrap', maxHeight: 300, overflow: 'auto',
+        }}>
+          {content}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function renderMarkdown(text: string): React.ReactNode[] {

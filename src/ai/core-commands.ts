@@ -483,6 +483,117 @@ const fullscreen: CommandEntry = {
   },
 }
 
+const listProviders: CommandEntry = {
+  id: 'core:list-providers',
+  name: 'List AI providers',
+  module: 'core',
+  category: 'system',
+  description: 'Show connected AI providers and available Ollama models',
+  aiHidden: true,
+  patterns: ['list providers', 'show providers', 'providers', 'models', 'list models', 'which ai'],
+  params: [],
+  handler: async () => {
+    const { getProviders } = await import('./router')
+    const active = getProviders()
+
+    const lines: string[] = ['**Connected providers** (first = preferred):']
+    if (active.length === 0) {
+      lines.push('  None')
+    } else {
+      for (const p of active) {
+        const avail = await p.available()
+        lines.push(`  • ${p.name}${avail ? '' : ' (unavailable)'}`)
+      }
+    }
+
+    // Check Ollama for available models
+    try {
+      const res = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(2000) })
+      if (res.ok) {
+        const data = await res.json()
+        const models: { name: string; details?: { parameter_size?: string } }[] = data.models || []
+        if (models.length > 0) {
+          lines.push('')
+          lines.push('**Ollama models** (local):')
+          for (const m of models) {
+            const size = m.details?.parameter_size || ''
+            lines.push(`  • ${m.name}${size ? ` (${size})` : ''}`)
+          }
+          lines.push('')
+          lines.push('Switch with: `set provider ollama <model>`')
+        }
+      }
+    } catch { /* Ollama not running */ }
+
+    ;(listProviders as any)._lastOutput = lines.join('\n')
+  },
+}
+
+const pullModel: CommandEntry = {
+  id: 'core:pull-model',
+  name: 'Pull Ollama model',
+  module: 'core',
+  category: 'system',
+  description: 'Download an Ollama model (e.g. "pull model llama3.1:8b")',
+  aiHidden: true,
+  patterns: [
+    'pull model {model}', 'pull {model}', 'download model {model}',
+    'ollama pull {model}', 'install model {model}',
+  ],
+  params: [
+    { name: 'model', type: 'string', required: true, description: 'Model name (e.g. llama3.1:8b)' },
+  ],
+  handler: async (params) => {
+    const model = String(params.model ?? '').trim()
+    if (!model) {
+      ;(pullModel as any)._lastOutput = 'Usage: `pull model llama3.1:8b`'
+      return
+    }
+
+    // Start pull (streaming progress)
+    try {
+      const res = await fetch('http://localhost:11434/api/pull', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: model }),
+      })
+      if (!res.ok) {
+        ;(pullModel as any)._lastOutput = `Failed to pull ${model}: ${res.statusText}`
+        return
+      }
+
+      // Read streaming progress
+      const reader = res.body?.getReader()
+      if (!reader) {
+        ;(pullModel as any)._lastOutput = `Pulling ${model}...`
+        return
+      }
+
+      const decoder = new TextDecoder()
+      let lastStatus = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        const lines = decoder.decode(value, { stream: true }).split('\n').filter(Boolean)
+        for (const line of lines) {
+          try {
+            const data = JSON.parse(line)
+            if (data.status) lastStatus = data.status
+          } catch {}
+        }
+      }
+
+      if (lastStatus === 'success') {
+        ;(pullModel as any)._lastOutput = `**${model}** downloaded successfully.\n\nSwitch to it with: \`set provider ollama ${model}\``
+      } else {
+        ;(pullModel as any)._lastOutput = `Pull ${model}: ${lastStatus || 'done'}`
+      }
+    } catch {
+      ;(pullModel as any)._lastOutput = 'Ollama is not running. Start it with `ollama serve`.'
+    }
+  },
+}
+
 const setProvider: CommandEntry = {
   id: 'core:set-provider',
   name: 'Set AI provider',
@@ -543,17 +654,24 @@ const setProvider: CommandEntry = {
       return
     }
 
-    // Ollama doesn't need a key
-    if (providerName === 'ollama') key = ''
+    // Ollama doesn't need a key — the "key" param is actually the model name
+    let model: string | undefined
+    if (providerName === 'ollama') {
+      model = key || localStorage.getItem('ee-ollama-model') || undefined
+      key = ''
+    }
 
     // Persist the key
     if (key) {
       localStorage.setItem(`ee-${providerName}-key`, key)
     }
+    if (providerName === 'ollama' && model) {
+      localStorage.setItem('ee-ollama-model', model)
+    }
 
     const { addProvider } = await import('./init')
-    addProvider(providerName as any, key)
-    console.log(`[provider] ${providerName} provider configured`)
+    addProvider(providerName as any, key, { model, preferred: true })
+    console.log(`[provider] ${providerName} provider configured${model ? ` (model: ${model})` : ''}`)
   },
 }
 
@@ -888,6 +1006,6 @@ export const coreCommands: CommandEntry[] = [
   goTo, resetView, zoomIn, zoomOut, zoomTo, faceDirection, lookAt, orbit,
   toggleBuildings, toggleTerrain, toggleLighting, setTimeOfDay,
   baseMap, listBaseMaps,
-  muteToggle, whatCanYouDo, fullscreen, setProvider, setCesiumToken,
+  muteToggle, whatCanYouDo, fullscreen, listProviders, pullModel, setProvider, setCesiumToken,
   postMessage, readMessages,
 ]

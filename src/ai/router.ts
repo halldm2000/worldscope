@@ -31,10 +31,14 @@ let providers: AIProvider[] = []
 /** Extra system prompt fragments from plugins */
 const systemContextFragments: string[] = []
 
-export function registerProvider(provider: AIProvider): void {
+export function registerProvider(provider: AIProvider, preferred?: boolean): void {
   // Replace existing provider with same name
   providers = providers.filter(p => p.name !== provider.name)
-  providers.push(provider)
+  if (preferred) {
+    providers.unshift(provider)  // Front of list = checked first
+  } else {
+    providers.push(provider)
+  }
 }
 
 export function removeProvider(name: string): void {
@@ -63,6 +67,31 @@ export async function route(input: string, history?: ChatMessage[]): Promise<Rou
   const trimmed = input.trim()
   if (!trimmed) {
     return { tier: 'pattern', params: {} }
+  }
+
+  // --- Tier 0: Pattern match for hidden/system commands (instant) ---
+  // Commands marked aiHidden (like set-provider) aren't sent to the classifier,
+  // so we check them first via pattern matching.
+  const hiddenCommands = registry.getAll().filter(c => c.aiHidden)
+  const hiddenMatch = matchPattern(trimmed, hiddenCommands)
+  if (hiddenMatch && hiddenMatch.score >= 0.85) {
+    console.log(`[router] System command match: ${hiddenMatch.command.id} (score: ${hiddenMatch.score.toFixed(3)})`)
+    try {
+      await hiddenMatch.command.handler(hiddenMatch.params)
+    } catch (err) {
+      console.error('[router] System command error:', err)
+    }
+    const output = (hiddenMatch.command as any)._lastOutput as string | undefined
+    if (output) {
+      delete (hiddenMatch.command as any)._lastOutput
+      return {
+        tier: 'pattern',
+        command: hiddenMatch.command,
+        params: hiddenMatch.params,
+        response: (async function* () { yield output })(),
+      }
+    }
+    return { tier: 'pattern', command: hiddenMatch.command, params: hiddenMatch.params }
   }
 
   const provider = await findProvider()
@@ -297,6 +326,9 @@ async function* runAIWithTools(
       if (event.type === 'text') {
         yield event.content
         hasText = true
+      }
+      if (event.type === 'reasoning') {
+        yield `\x00THINK\x00${event.content}`
       }
       if (event.type === 'error') {
         yield `\x00ERR\x00${event.message}`

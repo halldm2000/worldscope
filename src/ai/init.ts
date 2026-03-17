@@ -33,6 +33,9 @@ export function initAI(options?: { anthropicKey?: string | null }): void {
     addProvider('anthropic', options.anthropicKey)
   }
 
+  // Auto-detect Ollama (local models, works offline)
+  detectOllama()
+
   console.log(`[AI] Initialized with ${registry.getAll().length} commands`)
 }
 
@@ -43,7 +46,7 @@ export function initAI(options?: { anthropicKey?: string | null }): void {
 export function addProvider(
   type: 'anthropic' | 'openai' | 'ollama' | 'openrouter' | 'custom',
   apiKey: string,
-  options?: { model?: string; baseUrl?: string },
+  options?: { model?: string; baseUrl?: string; preferred?: boolean },
 ): void {
   let provider
 
@@ -70,8 +73,34 @@ export function addProvider(
       break
   }
 
-  registerProvider(provider)
-  console.log(`[AI] Provider added: ${provider.name}`)
+  registerProvider(provider, options?.preferred)
+  console.log(`[AI] Provider added: ${provider.name}${options?.preferred ? ' (preferred)' : ''}`)
+}
+
+/**
+ * Auto-detect Ollama running locally and register it as a provider.
+ * Picks the first available model, preferring any previously selected one.
+ */
+async function detectOllama(): Promise<void> {
+  try {
+    const res = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(2000) })
+    if (!res.ok) return
+    const data = await res.json()
+    const models: { name: string }[] = data.models || []
+    if (models.length === 0) return
+
+    // Use saved model preference, or first available
+    const saved = localStorage.getItem('ee-ollama-model')
+    const model = models.find(m => m.name === saved)?.name
+      || models.find(m => m.name.includes('nemotron'))?.name
+      || models[0].name
+
+    localStorage.setItem('ee-ollama-model', model)
+    addProvider('ollama', '', { model })
+    console.log(`[AI] Ollama auto-detected with model: ${model}`)
+  } catch {
+    // Ollama not running, that's fine
+  }
 }
 
 // Re-export for use by the set-provider command

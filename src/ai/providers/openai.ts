@@ -96,10 +96,31 @@ export class OpenAIProvider implements AIProvider {
 
     if (!response.ok) {
       const errBody = await response.text()
-      const parsed = parseAPIError(response.status, errBody, this.name)
-      yield { type: 'error', message: parsed.message }
-      yield { type: 'done' }
-      return
+      // Retry without tools if the model doesn't support function calling
+      if (body.tools && errBody.includes('does not support tools')) {
+        console.warn(`[${this.name}] Model doesn't support tools, retrying without`)
+        delete body.tools
+        try {
+          response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })
+        } catch (err) {
+          const parsed = parseNetworkError(err, this.name)
+          yield { type: 'error', message: parsed.message }
+          yield { type: 'done' }
+          return
+        }
+        if (!response.ok) {
+          const retryBody = await response.text()
+          const parsed = parseAPIError(response.status, retryBody, this.name)
+          yield { type: 'error', message: parsed.message }
+          yield { type: 'done' }
+          return
+        }
+      } else {
+        const parsed = parseAPIError(response.status, errBody, this.name)
+        yield { type: 'error', message: parsed.message }
+        yield { type: 'done' }
+        return
+      }
     }
 
     const reader = response.body?.getReader()
@@ -149,6 +170,10 @@ export class OpenAIProvider implements AIProvider {
           // Text content
           if (delta?.content) {
             yield { type: 'text', content: delta.content }
+          }
+          // Reasoning/thinking tokens (nemotron, deepseek-r1, etc.)
+          if (delta?.reasoning) {
+            yield { type: 'reasoning', content: delta.reasoning }
           }
 
           // Tool call deltas

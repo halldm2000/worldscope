@@ -68,6 +68,7 @@ export interface UsageData {
 
 export type StreamEvent =
   | { type: 'text'; content: string }
+  | { type: 'reasoning'; content: string }
   | { type: 'tool_call'; call: ToolCall }
   | { type: 'usage'; usage: UsageData }
   | { type: 'error'; message: string }
