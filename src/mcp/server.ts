@@ -24,8 +24,9 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { randomUUID } from 'node:crypto'
 import { WebSocket } from 'ws'
-import { readFileSync, writeFileSync } from 'node:fs'
-import { join, dirname } from 'node:path'
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
+import { join, dirname, resolve } from 'node:path'
+import { homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { z } from 'zod'
 import type {
@@ -287,6 +288,34 @@ mcpServer.resource(
   }),
 )
 
+// ── Setup tools (server-side, no browser needed) ──
+
+const PROJECT_ROOT = resolve(__dirname, '..', '..')
+const SERVER_SCRIPT = join(PROJECT_ROOT, 'src', 'mcp', 'server.ts')
+
+/** Read a JSON file, returning an empty object if missing or malformed */
+function readJsonFile(path: string): Record<string, any> {
+  try {
+    return JSON.parse(readFileSync(path, 'utf-8'))
+  } catch {
+    return {}
+  }
+}
+
+/** Write JSON to a file, creating parent directories if needed */
+function writeJsonFile(path: string, data: Record<string, any>): void {
+  const dir = dirname(path)
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  writeFileSync(path, JSON.stringify(data, null, 2) + '\n')
+}
+
+/** Check if worldscope is already configured in an mcpServers block */
+function hasWorldscope(config: Record<string, any>): boolean {
+  return !!config?.mcpServers?.worldscope
+}
+
+registerSetupTools(mcpServer)
+
 // ── Transport: stdio ──
 
 async function startStdio(): Promise<void> {
@@ -350,6 +379,7 @@ async function startHttp(httpPort: number): Promise<void> {
 
       registerToolsOn(sessionServer)
       registerResourcesOn(sessionServer)
+      registerSetupTools(sessionServer)
 
       transport.onclose = () => {
         const sid = transport.sessionId
@@ -435,6 +465,59 @@ function registerResourcesOn(server: McpServer): void {
         mimeType: 'application/json',
       }],
     }),
+  )
+}
+
+function registerSetupTools(server: McpServer): void {
+  server.tool(
+    'setup-claude-code',
+    'Configure Worldscope MCP for Claude Code. Creates .mcp.json in the project directory.',
+    {},
+    async () => {
+      const configPath = join(PROJECT_ROOT, '.mcp.json')
+      const config = readJsonFile(configPath)
+      if (hasWorldscope(config)) {
+        return { content: [{ type: 'text', text: `Already configured: ${configPath}` }] }
+      }
+      if (!config.mcpServers) config.mcpServers = {}
+      config.mcpServers.worldscope = { command: 'npx', args: ['tsx', 'src/mcp/server.ts'], cwd: PROJECT_ROOT }
+      writeJsonFile(configPath, config)
+      return { content: [{ type: 'text', text: `Configured Claude Code MCP at ${configPath}\n\nTo auto-approve tools, run:\n  /allowed-tools mcp__worldscope__*` }] }
+    },
+  )
+
+  server.tool(
+    'setup-claude-desktop',
+    'Configure Worldscope MCP for Claude Desktop. Adds the server to claude_desktop_config.json.',
+    {},
+    async () => {
+      const configPath = join(homedir(), 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json')
+      const config = readJsonFile(configPath)
+      if (hasWorldscope(config)) {
+        return { content: [{ type: 'text', text: `Already configured: ${configPath}\n\nRestart Claude Desktop to pick up any changes.` }] }
+      }
+      if (!config.mcpServers) config.mcpServers = {}
+      config.mcpServers.worldscope = { command: 'npx', args: ['tsx', SERVER_SCRIPT] }
+      writeJsonFile(configPath, config)
+      return { content: [{ type: 'text', text: `Configured Claude Desktop MCP at ${configPath}\n\nRestart Claude Desktop for the change to take effect.` }] }
+    },
+  )
+
+  server.tool(
+    'setup-cursor',
+    'Configure Worldscope MCP for Cursor IDE. Creates .cursor/mcp.json in the project directory.',
+    {},
+    async () => {
+      const configPath = join(PROJECT_ROOT, '.cursor', 'mcp.json')
+      const config = readJsonFile(configPath)
+      if (hasWorldscope(config)) {
+        return { content: [{ type: 'text', text: `Already configured: ${configPath}\n\nOpen the project in Cursor and the MCP server will be available automatically.` }] }
+      }
+      if (!config.mcpServers) config.mcpServers = {}
+      config.mcpServers.worldscope = { command: 'npx', args: ['tsx', 'src/mcp/server.ts'] }
+      writeJsonFile(configPath, config)
+      return { content: [{ type: 'text', text: `Configured Cursor MCP at ${configPath}\n\nOpen the worldscope project in Cursor — the MCP tools will be available in AI chat.` }] }
+    },
   )
 }
 
