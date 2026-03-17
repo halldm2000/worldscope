@@ -25,6 +25,7 @@ function flyToAsync(
   camera: Cesium.Camera,
   options: Parameters<Cesium.Camera['flyTo']>[0],
 ): Promise<void> {
+  stopOrbit()
   return new Promise((resolve) => {
     camera.flyTo({
       ...options,
